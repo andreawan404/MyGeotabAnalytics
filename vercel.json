@@ -1,0 +1,13 @@
+{
+  "redirects": [
+    { "source": "/", "destination": "/dashboard.html", "permanent": false }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    }
+  ]
+}
