@@ -5,7 +5,7 @@
 import { Chart, registerables } from 'chart.js';
 import { fetchTrips } from '../api/fetchers/trip';
 import { fetchDevices } from '../api/fetchers/device';
-import { fetchDiagnostics, findDiagnosticIdByName } from '../api/fetchers/diagnostic';
+import { fetchDiagnostics, resolveCumulativeFuelDiagnosticId } from '../api/fetchers/diagnostic';
 import { fetchStatusData } from '../api/fetchers/status-data';
 import { probeDiagnostics } from '../api/fetchers/probe';
 import type { TripDTO, DeviceLite, FilterChangeDetail } from '../api/fetchers/types';
@@ -20,10 +20,9 @@ import {
 
 Chart.register(...registerables);
 
-/** "Total fuel used" has no confirmed system id (see probe.ts — DiagnosticFuelUnitsId
- *  is a guess, not a constant), and the real id varies per database, so it is
- *  resolved by NAME. Same pattern the BBM view uses. */
-const CUMULATIVE_FUEL_NAME = /fuel.*(used|units|total)/i;
+// The cumulative fuel counter is resolved by resolveCumulativeFuelDiagnosticId
+// (diagnostic.ts) — id first, name only as a fallback, shared with the BBM view
+// so the two can never disagree about which counter they are reading.
 
 /**
  * Maps trips to Chart.js floating-bar points. x uses raw epoch-ms timestamps
@@ -97,7 +96,7 @@ async function fetchFuelRows(params: {
   if (trips.length === 0) return [];
 
   const diagnostics = await fetchDiagnostics({ database }); // near-static, cached 24h
-  const diagnosticId = findDiagnosticIdByName(diagnostics, CUMULATIVE_FUEL_NAME);
+  const diagnosticId = resolveCumulativeFuelDiagnosticId(diagnostics);
   if (!diagnosticId) return [];
 
   const probe = await probeDiagnostics({ database, diagnosticIds: [diagnosticId], toIso, groupId });

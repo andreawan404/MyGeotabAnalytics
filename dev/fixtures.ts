@@ -239,7 +239,10 @@ export const rawDiagnostics = [
   { id: 'DiagnosticOdometerAdjustmentId', name: 'Odometer adjustment', unitOfMeasure: { id: 'UnitOfMeasureKilometersId' } },
   { id: 'DiagnosticEngineHoursId', name: 'Engine hours', unitOfMeasure: { id: 'UnitOfMeasureHoursId' } },
   { id: 'DiagnosticFuelLevelId', name: 'Fuel level', unitOfMeasure: { id: 'UnitOfMeasurePercentageId' } },
-  { id: 'a7B8', name: 'Total Fuel Used', unitOfMeasure: { id: 'UnitOfMeasureLitersId' } },
+  // The counter MyGeotab's own Fuel Usage report is built on. It has a CONFIRMED
+  // well-known id, so it is resolved by id — names are localized and a name-only
+  // lookup finds nothing on a non-English database.
+  { id: 'DiagnosticDeviceTotalFuelId', name: 'Total fuel used', unitOfMeasure: { id: 'UnitOfMeasureLitersId' } },
   { id: 'DiagnosticEngineCoolantTemperatureId', name: 'Engine coolant temperature', unitOfMeasure: { id: 'UnitOfMeasureDegreesCelsiusId' } },
 ];
 
@@ -300,7 +303,33 @@ function deviceStatusRows(seed: StatusSeedSpec) {
   return rows;
 }
 
-export const rawStatusData = STATUS_SEEDS.flatMap(deviceStatusRows);
+// "Total fuel used" is a LIFETIME counter written at ignition-off, so it gets
+// one reading per trip rather than the 6-hourly sampling above — and that
+// reading is timestamped a little AFTER trip.stop, exactly as the real device
+// behaves. That lag is what the tooltip's grace window has to absorb, so the
+// fixtures reproduce it instead of landing conveniently on the stop instant.
+const LITRES_PER_KM = 0.12;
+const IGNITION_OFF_LAG_HOURS = 0.01; // ~36 s after the trip ends
+
+function totalFuelUsedRows() {
+  const rows: ReturnType<typeof statusRow>[] = [];
+  const running = new Map<string, number>();
+  // Oldest first, so the counter only ever climbs.
+  for (const t of [...TRIP_SPECS].sort((a, b) => b.stopHoursAgo - a.stopHoursAgo)) {
+    if (!running.has(t.deviceId)) {
+      running.set(t.deviceId, 4000);
+      // A baseline reading BEFORE the device's first trip: without one there is
+      // nothing to subtract from and the first trip is legitimately unmeasured.
+      rows.push(statusRow(t.deviceId, 'DiagnosticDeviceTotalFuelId', t.stopHoursAgo + t.driveHours + 0.1, 4000));
+    }
+    const next = running.get(t.deviceId)! + haversineKm(t.from, t.to) * LITRES_PER_KM;
+    running.set(t.deviceId, next);
+    rows.push(statusRow(t.deviceId, 'DiagnosticDeviceTotalFuelId', t.stopHoursAgo - IGNITION_OFF_LAG_HOURS, next));
+  }
+  return rows;
+}
+
+export const rawStatusData = [...STATUS_SEEDS.flatMap(deviceStatusRows), ...totalFuelUsedRows()];
 
 // FaultData: severity lives under a DIFFERENT key depending on database version,
 // so the fixtures deliberately mix all three forms fault-data.ts coalesces.

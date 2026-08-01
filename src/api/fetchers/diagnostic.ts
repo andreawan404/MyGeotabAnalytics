@@ -27,10 +27,48 @@ export async function fetchDiagnostics(params: { database: string }): Promise<Di
   return dtos;
 }
 
-/** Resolve a diagnostic by NAME rather than a hardcoded id — the ids for
- * anything outside Geotab's confirmed well-known set (see probe.ts) vary per
- * database, so "total fuel used" has to be found, not assumed. First match wins;
+/** Resolve a diagnostic by NAME. Only a fallback — see
+ * resolveCumulativeFuelDiagnosticId for why ids come first. First match wins;
  * null when the database has no such diagnostic (a normal, handleable case). */
 export function findDiagnosticIdByName(diagnostics: DiagnosticDTO[], pattern: RegExp): string | null {
   return diagnostics.find((d) => pattern.test(d.name))?.id ?? null;
 }
+
+/** Name fallback. Matches both word orders and Indonesian, because Geotab
+ * localizes diagnostic names ("Total fuel used" / "Bahan bakar terpakai"). */
+const CUMULATIVE_FUEL_NAME = /(fuel|bahan\s*bakar).*(used|units|total|terpakai|digunakan)|(total|used|terpakai)\s.*(fuel|bahan\s*bakar)/i;
+
+/**
+ * The one place the cumulative "total fuel used" counter is resolved — used by
+ * both the BBM view and the trip timeline tooltip so they can never disagree.
+ *
+ * ID FIRST. Diagnostic names are localized, so a name-only lookup returns null
+ * on a non-English database even when the counter is right there — which is
+ * exactly why fuel read as "not reported" while MyGeotab's own Fuel Usage
+ * report showed litres for the same vehicles and dates.
+ *
+ * Returns null only when the database genuinely has no such diagnostic; the
+ * caller still has to PROBE the returned id, since presence in the catalogue
+ * does not mean this fleet's hardware actually reports it.
+ */
+export function resolveCumulativeFuelDiagnosticId(diagnostics: DiagnosticDTO[]): string | null {
+  const byId = diagnostics.find((d) => d.id === WELL_KNOWN_DEVICE_TOTAL_FUEL_ID);
+  if (byId) return byId.id;
+
+  const byName = findDiagnosticIdByName(diagnostics, CUMULATIVE_FUEL_NAME);
+  if (byName) return byName;
+
+  // Neither worked: name the candidates we DID see, so the next round is not
+  // another guess. Cheap, once per load, and only when something is wrong.
+  const candidates = diagnostics.filter((d) => /fuel|bahan\s*bakar/i.test(d.name)).slice(0, 15);
+  console.warn(
+    'fuel: no cumulative "total fuel used" diagnostic resolved. Fuel-ish diagnostics present in this database:',
+    candidates.map((d) => `${d.id} = ${d.name}`)
+  );
+  return null;
+}
+
+/** Kept local to avoid importing probe.ts (which imports status-data.ts) into
+ * every consumer of this catalogue — it is the same string as
+ * WELL_KNOWN_DIAGNOSTICS.deviceTotalFuel. */
+const WELL_KNOWN_DEVICE_TOTAL_FUEL_ID = 'DiagnosticDeviceTotalFuelId';

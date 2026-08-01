@@ -18,7 +18,7 @@ import '../styles/fuel.css';
 import { fetchTrips } from '../api/fetchers/trip';
 import { fetchDevices } from '../api/fetchers/device';
 import { fetchFuelTransactions } from '../api/fetchers/fuel-transaction';
-import { fetchDiagnostics, findDiagnosticIdByName } from '../api/fetchers/diagnostic';
+import { fetchDiagnostics, resolveCumulativeFuelDiagnosticId } from '../api/fetchers/diagnostic';
 import { fetchStatusDataMulti } from '../api/fetchers/status-data';
 import { probeDiagnostics, WELL_KNOWN_DIAGNOSTICS } from '../api/fetchers/probe';
 import { toUtcRange } from '../utils/date-range';
@@ -47,10 +47,9 @@ import {
 
 Chart.register(...registerables);
 
-/** "Total fuel used" has no confirmed system id (see probe.ts) — its id varies
- *  per database, so it is resolved by NAME. Hardcoding a guessed
- *  DiagnosticFuelUnitsId would silently probe a diagnostic that isn't there. */
-const CUMULATIVE_NAME = /fuel.*(used|units|total)/i;
+// The cumulative counter is resolved by resolveCumulativeFuelDiagnosticId
+// (diagnostic.ts): the confirmed DiagnosticDeviceTotalFuelId first, localized
+// name matching only as a fallback. Shared with the trip timeline tooltip.
 
 /** Above this the readings cannot be a percentage, so they are already litres
  *  and the tank size must NOT be applied. */
@@ -163,7 +162,7 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
       // precedence anyway, so probing would just burn a round trip.
       if (!availability.transactions) {
         const diagnostics = await fetchDiagnostics({ database }); // near-static, cached 24h
-        cumulativeId = findDiagnosticIdByName(diagnostics, CUMULATIVE_NAME);
+        cumulativeId = resolveCumulativeFuelDiagnosticId(diagnostics);
         sourceDetail = diagnostics.find((d) => d.id === cumulativeId)?.name ?? '';
 
         // ONE multiCall for both candidates (shared probe, cached 24h).

@@ -4,14 +4,24 @@ import { fetchStatusDataMulti } from './status-data';
 const TTL_MS = 24 * 60 * 60 * 1000;
 const LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000; // 2 days: long enough that a parked vehicle still reports
 
-/** Confirmed Geotab system ids. DiagnosticFuelUnitsId is deliberately absent —
- * it is NOT confirmed; resolve "total fuel used" by name with
- * findDiagnosticIdByName (diagnostic.ts) instead of hardcoding a guess. */
+/** Confirmed Geotab system ids.
+ *
+ * `deviceTotalFuel` is "Total fuel used (since telematics device install)" — the
+ * counter MyGeotab's own Fuel Usage report is built on. It is written at every
+ * ignition-off regardless of how the vehicle reports (OBD2 / J1708 / J1939),
+ * which makes it the one fuel source worth trying first.
+ *
+ * Ids are used in preference to names because diagnostic names are LOCALIZED:
+ * on an Indonesian database "Total fuel used" comes back as something else
+ * entirely, and a name-only lookup silently finds nothing. This is the same
+ * mistake that made every exception bucket as "low" (see rule-severity.ts).
+ * DiagnosticFuelUnitsId stays out — it is a guess, never confirmed. */
 export const WELL_KNOWN_DIAGNOSTICS = {
   odometer: 'DiagnosticOdometerId',
   odometerAdjustment: 'DiagnosticOdometerAdjustmentId',
   engineHours: 'DiagnosticEngineHoursId',
   fuelLevel: 'DiagnosticFuelLevelId',
+  deviceTotalFuel: 'DiagnosticDeviceTotalFuelId',
 } as const;
 
 /** Which of these diagnostics does this database/group actually report?

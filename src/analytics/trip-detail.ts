@@ -49,6 +49,9 @@ function lastIndexAtOrBefore(list: StatusDataDTO[], ms: number): number {
   return idx;
 }
 
+/** See the closing-boundary comment in fuelForTrip. */
+const IGNITION_OFF_GRACE_MS = 5 * 60 * 1000;
+
 function fuelForTrip(trip: TripDTO, list: StatusDataDTO[] | undefined): number | null {
   if (!list || list.length === 0) return null;
 
@@ -57,7 +60,12 @@ function fuelForTrip(trip: TripDTO, list: StatusDataDTO[] | undefined): number |
   if (!Number.isFinite(startMs) || !Number.isFinite(stopMs)) return null;
 
   const a = lastIndexAtOrBefore(list, startMs);
-  const b = lastIndexAtOrBefore(list, stopMs);
+  // Grace window on the closing boundary: "Total fuel used" is written AT
+  // ignition-off, and that record's timestamp routinely lands a moment AFTER
+  // trip.stop. Looking only at/before trip.stop misses the very reading that
+  // closes the trip, so every trip reads as unmeasured. The window stays small
+  // enough that it cannot reach the next trip's own ignition-off record.
+  const b = lastIndexAtOrBefore(list, stopMs + IGNITION_OFF_GRACE_MS);
 
   // a < 0: the counter has no reading at or before this trip started, so there
   // is no baseline to subtract from.

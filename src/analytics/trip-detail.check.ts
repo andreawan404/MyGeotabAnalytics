@@ -183,4 +183,33 @@ assert.deepStrictEqual(fuelPerTrip([], [row('d1', '2026-08-01T08:00:00.000Z', 1)
 assert.deepStrictEqual(buildTripDetails([], [], {}), []);
 assert.deepStrictEqual(buildTripDetails([], devices, {}), []);
 
+// --- ignition-off grace window ----------------------------------------------
+// "Total fuel used" is written AT ignition-off, and that record's timestamp
+// lands a moment AFTER trip.stop. Without a grace window the closing reading is
+// missed and every trip reads as unmeasured — which is exactly what MyGeotab's
+// own Fuel Usage report contradicted on real data.
+{
+  const t = trip({ id: 'grace', deviceId: 'd9', start: '2026-07-31T09:54:00Z', stop: '2026-07-31T10:58:00Z' });
+  const rows = [
+    row('d9', '2026-07-31T09:50:00Z', 1000), // previous ignition-off = baseline
+    row('d9', '2026-07-31T10:58:41Z', 1004.1), // this trip's ignition-off, 41s LATE
+  ];
+  const got = fuelPerTrip([t], rows)['grace'];
+  assert.ok(got !== null, 'a reading just after trip.stop must still close the trip');
+  assert.ok(Math.abs((got as number) - 4.1) < 1e-9, `expected 4.1 L, got ${got}`);
+}
+
+// The window must not be so wide that the NEXT trip's ignition-off record gets
+// counted into this trip.
+{
+  const t = trip({ id: 'nogreed', deviceId: 'd9', start: '2026-07-31T09:00:00Z', stop: '2026-07-31T09:30:00Z' });
+  const rows = [
+    row('d9', '2026-07-31T08:55:00Z', 500),
+    row('d9', '2026-07-31T09:31:00Z', 502), // this trip's close
+    row('d9', '2026-07-31T10:40:00Z', 599), // a LATER trip's close, far outside the window
+  ];
+  const got = fuelPerTrip([t], rows)['nogreed'];
+  assert.strictEqual(got, 2, `expected only this trip's 2 L, got ${got}`);
+}
+
 console.log('trip-detail.check.ts: PASS');
