@@ -1,4 +1,4 @@
-// KNOWN LIMITATION: this does not currently execute under plain Node/tsx.
+﻿// KNOWN LIMITATION: this does not currently execute under plain Node/tsx.
 // Importing ./addin transitively loads charts/heatmap.ts -> leaflet, and
 // Leaflet touches `window` at module scope, so the import throws before any
 // assert runs. Same root limitation as heatmap.check.ts. Verified instead in a
@@ -8,15 +8,15 @@
 //
 // What it specifies: (1) blur() is safe before initialize() ever ran;
 // (2) initialize() wires all 4 components and blur() invokes each cleanup
-// exactly once, idempotently; (3) callback() ALWAYS fires — even when a
+// exactly once, idempotently; (3) callback() ALWAYS fires â€” even when a
 // component throws, or when initialize() itself throws. (3) is the contract
 // whose violation left the add-in spinning forever in MyGeotab.
 
 import assert from 'node:assert';
-import { fleetAnalyticsDashboard } from './addin';
+import { createAddin, fleetAnalyticsDashboard } from './addin';
 
 // blur() before initialize() must be a safe no-op, not a crash.
-const neverInitialized = fleetAnalyticsDashboard();
+const neverInitialized = createAddin();
 neverInitialized.blur();
 
 // DI: fake components each return a cleanup spy.
@@ -25,7 +25,7 @@ const fakeCleanup = () => {
   cleanupCalls++;
 };
 
-const addin = fleetAnalyticsDashboard({
+const addin = createAddin({
   initGeotabClient: () => {},
   getAppElement: () => ({} as any),
   renderShell: () => ({
@@ -54,10 +54,10 @@ addin.blur();
 assert.strictEqual(cleanupCalls, 4, 'expected a second blur() call to not re-invoke cleanups');
 
 // The spinner in MyGeotab only clears when callback() runs, so a throwing
-// component must NOT prevent it — the whole reason the add-in hung before.
+// component must NOT prevent it â€” the whole reason the add-in hung before.
 let cbAfterThrow = false;
 let survivorCleanups = 0;
-const throwingAddin = fleetAnalyticsDashboard({
+const throwingAddin = createAddin({
   initGeotabClient: () => {},
   getAppElement: () => ({} as any),
   renderShell: () => ({
@@ -91,7 +91,7 @@ assert.strictEqual(survivorCleanups, 3, 'expected the 3 non-throwing components 
 
 // A failure inside initialize() itself (before components) must also reach callback().
 let cbAfterFatal = false;
-const fatalAddin = fleetAnalyticsDashboard({
+const fatalAddin = createAddin({
   initGeotabClient: () => {
     throw new Error('boom: simulated fatal failure');
   },
@@ -107,4 +107,28 @@ fatalAddin.initialize({} as any, { database: 'testdb' }, () => {
 });
 assert.strictEqual(cbAfterFatal, true, 'expected callback() to still run when initialize() itself throws');
 
+// The host entry must take NO parameters. The SDK's own example is
+// `geotab.addin.x = function (api, state, callback)`, so MyGeotab may call the
+// factory with arguments; if it declared a `deps` parameter those arguments
+// would be mistaken for injected dependencies and it would throw instead of
+// returning a lifecycle object — leaving the add-in blank.
+assert.strictEqual(
+  fleetAnalyticsDashboard.length,
+  0,
+  'fleetAnalyticsDashboard() must declare no parameters — the host may call it with arguments'
+);
+const asHostCallsIt = (fleetAnalyticsDashboard as (...a: unknown[]) => unknown)(
+  { call: () => {}, multiCall: () => {} },
+  { database: 'testdb' },
+  () => {}
+) as ReturnType<typeof createAddin>;
+for (const fn of ['initialize', 'focus', 'blur'] as const) {
+  assert.strictEqual(
+    typeof asHostCallsIt[fn],
+    'function',
+    `expected a usable ${fn}() even when the host passes arguments to the factory`
+  );
+}
+
 console.log('addin.check.ts: PASS');
+
