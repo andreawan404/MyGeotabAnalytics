@@ -108,6 +108,56 @@
   gap: 1rem;
 }
 
+/* Own line above the inputs: flex-basis 100% wraps the row without .fa-filter
+   having to stop being a plain flex-wrap row. */
+.fa-presets {
+  flex: 0 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.fa-preset-btn {
+  font: inherit;
+  font-size: 0.8rem;
+  /* 44px minimum touch target — this runs in a narrow MyGeotab iframe. */
+  min-height: 44px;
+  padding: 0 0.9rem;
+  border: 1px solid var(--fa-border);
+  border-radius: 999px;
+  background: var(--fa-surface);
+  color: var(--fa-text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fa-preset-btn:hover {
+  background: var(--fa-bg);
+}
+
+.fa-preset-btn[aria-pressed='true'] {
+  background: var(--fa-accent);
+  border-color: var(--fa-accent);
+  color: var(--fa-surface);
+  font-weight: 600;
+}
+
+/* Scoped to the filter bar: .fa-field is shared with the fuel view's inline
+   assumption inputs, which must keep their compact size. */
+.fa-filter .fa-field input,
+.fa-filter .fa-field select {
+  min-height: 44px;
+  max-width: 100%;
+}
+
+/* Inverted / empty range warning. Own line, under the controls. */
+.fa-filter-hint {
+  flex: 0 0 100%;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--fa-danger);
+}
+
 .fa-field {
   display: flex;
   flex-direction: column;
@@ -280,6 +330,110 @@
   font-size: 0.85rem;
 }
 
+/* --- KPI self-explanation (viz-agent) -------------------------------------
+   Never hover-only: the source caption is always visible and the detail panel
+   is toggled by a real <button>, so touch and screen readers get the same
+   information a mouse does. All new rules, no shared class restyled. */
+
+/* Always-visible one-liner: what this number is made of. --fa-muted is too
+   light for body copy on white, so this steps up to --fa-text. */
+.fa-kpi-source {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem; /* 12px floor */
+  line-height: 1.45;
+  color: var(--fa-text);
+}
+
+/* Confidence chip. The TEXT carries the meaning; colour only reinforces it. */
+.fa-kpi-kind {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  margin-right: 0.4rem;
+}
+
+.fa-kpi-kind-terukur {
+  background: var(--fa-low-bg);
+  color: var(--fa-low-fg);
+}
+
+.fa-kpi-kind-heuristik,
+.fa-kpi-kind-estimasi {
+  background: var(--fa-med-bg);
+  color: var(--fa-med-fg);
+}
+
+.fa-kpi-why {
+  font: inherit;
+  font-size: 0.75rem;
+  display: block;
+  width: 100%;
+  min-height: 44px; /* touch target */
+  margin-top: 0.5rem;
+  padding: 0 0.6rem;
+  text-align: left;
+  border: 1px solid var(--fa-border);
+  border-radius: 6px;
+  background: var(--fa-surface);
+  color: var(--fa-accent);
+  cursor: pointer;
+}
+
+.fa-kpi-why:hover {
+  background: var(--fa-bg);
+}
+
+/* Focus must stay visible — do not replace this with outline: none. */
+.fa-kpi-why:focus-visible {
+  outline: 2px solid var(--fa-accent);
+  outline-offset: 2px;
+}
+
+.fa-kpi-why[aria-expanded='true']::after {
+  content: ' ▲';
+}
+
+.fa-kpi-why[aria-expanded='false']::after {
+  content: ' ▼';
+}
+
+.fa-kpi-detail {
+  margin-top: 0.5rem;
+  padding: 0.6rem;
+  border: 1px solid var(--fa-border);
+  border-radius: 6px;
+  background: var(--fa-bg);
+}
+
+.fa-kpi-detail-list {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--fa-text);
+}
+
+.fa-kpi-detail-list dt {
+  font-weight: 600;
+  color: var(--fa-muted); /* label only — the body copy below stays --fa-text */
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  margin-top: 0.5rem;
+}
+
+.fa-kpi-detail-list dt:first-child {
+  margin-top: 0;
+}
+
+.fa-kpi-detail-list dd {
+  margin: 0.1rem 0 0;
+  /* Substituted arithmetic reads as a calculation, not prose. */
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 720px) {
   .fa-layout {
     grid-template-columns: 1fr;
@@ -294,5 +448,16 @@
   .fa-nav-item {
     width: auto;
     white-space: nowrap;
+  }
+
+  /* Narrow iframe: controls stack instead of squeezing a datetime input to
+     unreadable. The filter bar itself stays a flex-wrap row. */
+  .fa-filter .fa-field {
+    flex: 1 1 100%;
+  }
+
+  .fa-presets {
+    overflow-x: auto;
+    flex-wrap: nowrap;
   }
 }

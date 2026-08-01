@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "check": "tsx src/utils/cache.check.ts && tsx src/api/geotabClient.check.ts && tsx src/api/fetchers/parseDuration.check.ts && tsx src/api/fetchers/rule-severity.check.ts && tsx src/utils/date-range.check.ts && tsx src/utils/geo.check.ts && tsx src/api/fetchers/fetchers.check.ts && tsx src/components/kpi-card.check.ts && tsx src/addin.check.ts && tsx src/analytics/fleet-health.check.ts && tsx src/analytics/predictive.check.ts && tsx src/analytics/security.check.ts && tsx src/analytics/safety.check.ts && tsx src/analytics/fuel.check.ts"
+    "check": "tsx src/utils/cache.check.ts && tsx src/api/geotabClient.check.ts && tsx src/api/fetchers/parseDuration.check.ts && tsx src/api/fetchers/rule-severity.check.ts && tsx src/utils/date-range.check.ts && tsx src/utils/geo.check.ts && tsx src/api/fetchers/fetchers.check.ts && tsx src/components/kpi-card.check.ts && tsx src/addin.check.ts && tsx src/analytics/fleet-health.check.ts && tsx src/analytics/predictive.check.ts && tsx src/analytics/security.check.ts && tsx src/analytics/safety.check.ts && tsx src/analytics/fuel.check.ts && tsx src/analytics/trip-detail.check.ts && tsx src/charts/trip-timeline.check.ts"
   },
   "dependencies": {
     "chart.js": "^4.4.0",
