@@ -5,6 +5,9 @@ import {
   consumptionFromLevel,
   estimateFromDistance,
   litresPer100Km,
+  kmPerLitre,
+  fleetKmPerLitre,
+  economyByDevice,
   idleFuelWaste,
   groupByDay,
   dayKey,
@@ -133,6 +136,45 @@ assert.strictEqual(litresPer100Km(45, 150), 30, '45 L over 150 km = 30 L/100km')
 assert.strictEqual(litresPer100Km(45, 0), null, 'zero km is null, NOT Infinity');
 assert.strictEqual(litresPer100Km(0, 0), null, 'nothing over nothing is null, NOT NaN');
 assert.strictEqual(litresPer100Km(0, 100), 0, 'no fuel over real distance is a real 0');
+
+// --- kmPerLitre ---------------------------------------------------------------
+// Source of truth: MyGeotab's own "Fuel and EV Energy Usage" report, unit
+// "BRV SMA" — 83 km, 7.40 L, fuel economy 11.23 km/L. Our figure must land on
+// the same number (their 11.23 vs our 11.2162 is their rounding of the litres,
+// not a different formula: distance / fuel used).
+assert.ok(
+  Math.abs((kmPerLitre(83, 7.4) as number) - 11.22) < 0.01,
+  `83 km over 7.40 L must match the Geotab report's 11.2 km/L, got ${kmPerLitre(83, 7.4)}`
+);
+assert.strictEqual(kmPerLitre(83, 0), null, 'zero litres is null, NOT Infinity');
+assert.strictEqual(kmPerLitre(0, 0), null, 'nothing over nothing is null, NOT NaN');
+assert.strictEqual(kmPerLitre(83, -5), null, 'negative litres is null, never a negative economy');
+assert.strictEqual(kmPerLitre(0, 10), 0, 'no distance on real fuel is a real 0 (idled all range)');
+
+// --- fleetKmPerLitre: TOTAL km / TOTAL litres, never the average of ratios ----
+// v1 did the work: 1000 km on 100 L = 10 km/L. v2 barely moved: 2 km on 1 L =
+// 2 km/L. Total-over-total = 1002/101 = 9.92 — the fleet really did get ~10
+// km/L. Averaging the two ratios would print (10+2)/2 = 6, letting a vehicle
+// that contributed 0.2% of the distance drag the headline down by a third.
+const fleet = fleetKmPerLitre({ v1: 1000, v2: 2 }, { v1: 100, v2: 1 }) as number;
+assert.ok(Math.abs(fleet - 1002 / 101) < 1e-9, `total over total, got ${fleet}`);
+assert.ok(fleet > 9.9, `must not collapse toward the average-of-ratios 6, got ${fleet}`);
+assert.notStrictEqual(fleet, 6, 'average of per-vehicle ratios is the wrong answer');
+
+// --- economyByDevice ----------------------------------------------------------
+assert.deepStrictEqual(
+  economyByDevice({ v1: 150, v2: 100, v3: 0 }, { v1: 15, v2: 0, v4: 5 }),
+  { v1: 10, v2: null, v3: null, v4: 0 },
+  'a 0-litre device is null; the union of both maps is keyed, never a missing key'
+);
+
+// --- empty input: null / {}, no NaN ------------------------------------------
+assert.strictEqual(fleetKmPerLitre({}, {}), null, 'empty fleet is null, NOT NaN');
+assert.strictEqual(fleetKmPerLitre({ v1: 100 }, {}), null, 'km with no litres is null, NOT Infinity');
+assert.deepStrictEqual(economyByDevice({}, {}), {}, 'no devices -> no rows');
+for (const v of Object.values(economyByDevice({ v1: 0 }, { v1: 0 }))) {
+  assert.ok(v === null || Number.isFinite(v), `economy is null or finite, got ${v}`);
+}
 
 // --- idleFuelWaste ------------------------------------------------------------
 assert.deepStrictEqual(

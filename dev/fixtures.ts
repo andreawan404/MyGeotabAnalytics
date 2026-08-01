@@ -345,12 +345,20 @@ export const rawFaultData = [
 ];
 
 // Volume is `volume`, currency is `currencyCode`, distance is `odometer`.
+//
+// Volumes are sized against the distances these devices actually cover in the
+// fixture window (tens of km, not thousands), so fuel economy lands in a
+// believable 9-12 km/L. Litres that outweigh the kilometres make the BBM view
+// render a real calculation over nonsense input — the arithmetic looks broken
+// when it is the data that is, and that costs a debugging round trip every time
+// someone eyeballs dev mode. IDR ~13.500/L.
 export const rawFuelTransactions = [
-  { id: 'fuel-1', device: { id: 'device-1' }, dateTime: iso(10), volume: 120.5, cost: 1_506_250, currencyCode: 'IDR', odometer: 184_690 },
-  { id: 'fuel-2', device: { id: 'device-2' }, dateTime: iso(20), volume: 210.0, cost: 2_625_000, currencyCode: 'IDR', odometer: 252_640 },
-  { id: 'fuel-3', device: { id: 'device-3' }, dateTime: iso(33), volume: 85.25, cost: 1_065_625, currencyCode: 'IDR', odometer: 92_870 },
-  { id: 'fuel-4', device: { id: 'device-1' }, dateTime: iso(58), volume: 118.0, cost: null, currencyCode: null, odometer: null },
-  { id: 'fuel-5', device: { id: 'device-4' }, dateTime: iso(76), volume: 64.75, cost: 809_375, currencyCode: 'IDR', odometer: 65_390 },
+  { id: 'fuel-1', device: { id: 'device-1' }, dateTime: iso(10), volume: 2.4, cost: 32_400, currencyCode: 'IDR', odometer: 184_690 },
+  { id: 'fuel-2', device: { id: 'device-2' }, dateTime: iso(20), volume: 8.1, cost: 109_350, currencyCode: 'IDR', odometer: 252_640 },
+  { id: 'fuel-3', device: { id: 'device-3' }, dateTime: iso(33), volume: 4.0, cost: 54_000, currencyCode: 'IDR', odometer: 92_870 },
+  // cost/currency deliberately null — the Biaya column must degrade, not NaN.
+  { id: 'fuel-4', device: { id: 'device-1' }, dateTime: iso(58), volume: 1.5, cost: null, currencyCode: null, odometer: null },
+  { id: 'fuel-5', device: { id: 'device-4' }, dateTime: iso(76), volume: 6.8, cost: 91_800, currencyCode: 'IDR', odometer: 65_390 },
 ];
 
 // Get User with search {isDriver:true}. `name` is the LOGIN (an email), not a

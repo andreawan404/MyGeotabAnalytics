@@ -38,6 +38,8 @@ import {
   consumptionFromLevel,
   estimateFromDistance,
   litresPer100Km,
+  fleetKmPerLitre,
+  economyByDevice,
   idleFuelWaste,
   groupByDay,
   dayKey,
@@ -228,6 +230,12 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
     const idle = idleFuelWaste(snap.trips, settings.litresPerIdleHour);
     const cost = snap.source === 'transactions' ? costByDevice(snap.transactions) : null;
 
+    // km/L is only a comparison when the litres were MEASURED — see
+    // economyBlocker. When it is blocked every economy cell is null, so the
+    // dashes come from one decision instead of per-cell guesswork.
+    const blocked = economyBlocker(snap.source);
+    const economy = economyByDevice(km, litres);
+
     const nameById = new Map(snap.devices.map((d) => [d.id, d.name]));
     const rows = [...new Set([...Object.keys(litres), ...Object.keys(km)])]
       .map((id) => ({
@@ -236,6 +244,7 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
         km: km[id] ?? 0,
         litres: litres[id] ?? 0,
         efficiency: litresPer100Km(litres[id] ?? 0, km[id] ?? 0),
+        economy: blocked ? null : (economy[id] ?? null),
         cost: cost ? (cost[id] ?? 0) : null,
       }))
       .sort((a, b) => b.litres - a.litres);
@@ -243,6 +252,9 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
     const totalL = sumValues(litres);
     const totalKm = sumValues(km);
     const avg = litresPer100Km(totalL, totalKm);
+    // Total km / total litres — deliberately NOT the average of the per-unit
+    // column below it (see fleetKmPerLitre).
+    const fleetEconomy = blocked ? null : fleetKmPerLitre(km, litres);
     const totalCost = cost ? sumValues(cost) : null;
     const currency = snap.transactions.find((t) => t.currency)?.currency ?? '';
 
@@ -257,6 +269,15 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
           <div class="fa-kpi-label">Rata-rata L/100km</div>
           <div class="fa-kpi-value">${avg === null ? '—' : fmt(avg)}</div>
           ${totalKm > 0 ? `<div class="fa-kpi-note">${fmt(totalKm, 0)} km total</div>` : ''}
+        </div>
+        <div class="fa-kpi-card">
+          <div class="fa-kpi-label">Efisiensi BBM (km/L)</div>
+          <div class="fa-kpi-value">${fleetEconomy === null ? '—' : fmt(fleetEconomy, 2)}</div>
+          <div class="fa-kpi-note">${
+            blocked
+              ? blocked
+              : `${sourceTag(isEstimateSource(snap.source))} ${fmt(totalKm, 0)} km ÷ ${fmt(totalL)} L`
+          }</div>
         </div>
         ${
           // Omitted entirely when there is no cost data — a "Rp 0" card reads as
@@ -289,12 +310,14 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
 
       <table class="fa-table">
         <thead><tr>
-          <th>Unit</th><th>Jarak (km)</th><th>BBM (L)</th><th>L/100km</th>${cost ? '<th>Biaya</th>' : ''}
+          <th>Unit</th><th>Jarak (km)</th><th>BBM (L)</th><th>L/100km</th>
+          <th>km/L${blocked ? '<small class="fa-fuel-th-note">tidak tersedia</small>' : ''}</th>
+          ${cost ? '<th>Biaya</th>' : ''}
         </tr></thead>
         <tbody>
           ${
             rows.length === 0
-              ? `<tr><td colspan="${cost ? 5 : 4}">Tidak ada unit dengan data pada periode ini.</td></tr>`
+              ? `<tr><td colspan="${cost ? 6 : 5}">Tidak ada unit dengan data pada periode ini.</td></tr>`
               : rows
                   .map(
                     (r) => `<tr>
@@ -302,6 +325,7 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
                       <td>${fmt(r.km, 0)}</td>
                       <td>${fmt(r.litres)}</td>
                       <td>${r.efficiency === null ? '—' : fmt(r.efficiency)}</td>
+                      <td>${r.economy === null ? '—' : fmt(r.economy, 2)}</td>
                       ${cost ? `<td>${currency} ${fmt(r.cost ?? 0, 0)}</td>` : ''}
                     </tr>`
                   )
@@ -476,6 +500,32 @@ function looksLikePercent(rows: StatusDataDTO[]): boolean {
 
 // --- markup ------------------------------------------------------------------
 
+/** One definition of "is this measured or guessed", so the banner and the
+ *  km/L card can never end up telling the user different stories. */
+function isEstimateSource(source: FuelSource): boolean {
+  return source !== 'transactions' && source !== 'cumulative';
+}
+
+/**
+ * Why km/L is refused for some sources.
+ *
+ * With the distance fallback litres = km × rasio, so km/L is exactly
+ * 100/rasio — the SAME number for every unit in the fleet, no matter how they
+ * drive. It compares nothing while looking like a measurement, which is the
+ * one thing this view exists to prevent. Decided with Aan: show "—" and say
+ * why. `null` means the figure is real and may be printed.
+ */
+function economyBlocker(source: FuelSource): string | null {
+  switch (source) {
+    case 'distance':
+      return 'Tidak tersedia: liter dihitung dari jarak × rasio, jadi km/L akan sama persis untuk semua unit.';
+    case 'none':
+      return 'Tidak tersedia: database ini tidak melaporkan data bahan bakar.';
+    default:
+      return null; // transactions / cumulative / level — litres were measured
+  }
+}
+
 /** The whole point of the module: never let the user read an estimate as a
  *  measurement. Visible for every source, on every render. */
 function renderBanner(snap: Snapshot, cfg: Settings): string {
@@ -505,10 +555,17 @@ function renderBanner(snap: Snapshot, cfg: Settings): string {
   }
 }
 
+/** The TERUKUR/ESTIMASI pill. Shared by the banner and the km/L card so the
+ *  new card speaks the view's existing visual language instead of a second
+ *  one. fuel.css sizes it up inside an estimate banner. */
+function sourceTag(isEstimate: boolean): string {
+  return `<span class="fa-fuel-tag${isEstimate ? ' is-estimate' : ''}">${isEstimate ? 'ESTIMASI' : 'TERUKUR'}</span>`;
+}
+
 function banner(isEstimate: boolean, headline: string, detail: string): string {
   return `
     <div class="fa-fuel-banner${isEstimate ? ' is-estimate' : ''}">
-      <span class="fa-fuel-tag">${isEstimate ? 'ESTIMASI' : 'TERUKUR'}</span>
+      ${sourceTag(isEstimate)}
       <span class="fa-fuel-banner-text">
         <strong>${headline}</strong>
         <small>${detail}</small>

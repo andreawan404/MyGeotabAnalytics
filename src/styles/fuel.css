@@ -44,6 +44,13 @@
   color: var(--fa-med-fg);
 }
 
+/* The pill also rides inside the km/L KPI card, where it must stay small — the
+   banner rule below is what blows it up, and only there. */
+.fa-fuel-tag.is-estimate {
+  background: var(--fa-high-bg);
+  color: var(--fa-high-fg);
+}
+
 /* Estimated sources: the warning colour, and ESTIMASI becomes the biggest
    piece of text on the card so it cannot be skimmed past. */
 .fa-fuel-banner.is-estimate {
@@ -55,6 +62,15 @@
   padding: 0.35rem 0.75rem;
   background: var(--fa-high-bg);
   color: var(--fa-high-fg);
+}
+
+/* "km/L — tidak tersedia": the column of dashes needs its reason next to it,
+   because the table is often scrolled away from the KPI card that explains. */
+.fa-fuel-th-note {
+  display: block;
+  font-weight: 400;
+  font-size: 0.7rem;
+  color: var(--fa-muted);
 }
 
 .fa-fuel-controls {

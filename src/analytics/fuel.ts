@@ -110,6 +110,47 @@ export function litresPer100Km(litres: number, km: number): number | null {
   return (litres / km) * 100;
 }
 
+/** Distance per litre — the same figure MyGeotab's own "Fuel and EV Energy
+ *  Usage" report prints as "Fuel economy" (83 km / 7.40 L = 11.2 km/L), so the
+ *  two reports can be laid side by side. `null` (never Infinity, never NaN)
+ *  when there is no fuel to divide by: a unit that logged distance but no
+ *  litres has no economy, and the table must print "—". */
+export function kmPerLitre(km: number, litres: number): number | null {
+  if (!Number.isFinite(km) || !Number.isFinite(litres) || litres <= 0) return null;
+  return km / litres;
+}
+
+/**
+ * Fleet economy: TOTAL km / TOTAL litres.
+ *
+ * DO NOT "simplify" this into the average of economyByDevice(). Averaging
+ * ratios gives a van that rolled 2 km exactly the same vote as a truck that
+ * ran 2000, so one barely-moved vehicle with a freak ratio drags the fleet
+ * headline around. Totalling first weights every kilometre equally — and it is
+ * what MyGeotab's own report does, which is the point: our number has to
+ * reconcile with theirs, not merely look plausible.
+ */
+export function fleetKmPerLitre(
+  kmByDevice: Record<string, number>,
+  litresByDevice: Record<string, number>
+): number | null {
+  return kmPerLitre(sumValues(kmByDevice), sumValues(litresByDevice));
+}
+
+/** Per-device economy for the table. Keyed by the UNION of both maps, so a
+ *  device with litres but no trips (or the reverse) still gets an explicit
+ *  `null` instead of a silently missing key the view would read as 0. */
+export function economyByDevice(
+  kmByDevice: Record<string, number>,
+  litresByDevice: Record<string, number>
+): Record<string, number | null> {
+  const out: Record<string, number | null> = {};
+  for (const id of new Set([...Object.keys(kmByDevice), ...Object.keys(litresByDevice)])) {
+    out[id] = kmPerLitre(kmByDevice[id] ?? 0, litresByDevice[id] ?? 0);
+  }
+  return out;
+}
+
 /** HEURISTIK, not a measurement: idle seconds x an assumed burn rate. Geotab
  *  reports idle time, never idle fuel, so the rate is a knob (default 2 L/jam,
  *  a typical light truck) the user is expected to tune per fleet. */
