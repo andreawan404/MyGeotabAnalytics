@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "items": [
     {
-      "url": "https://my-geotab-analytics.vercel.app/dashboard.html",
+      "url": "https://my-geotab-analytics.vercel.app/fleetAnalyticsDashboard.html",
       "path": "ActivityLink/",
       "menuName": {
         "en": "Fleet Analytics Dashboard",

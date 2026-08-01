@@ -26,7 +26,10 @@ export default defineConfig({
   plugins: [geotabClassicScript()],
   build: {
     rollupOptions: {
-      input: 'dashboard.html',
+      // Filename is load-bearing: MyGeotab derives the entry key from it and
+      // calls geotab.addin.<filename-without-extension>. It must stay in sync
+      // with the key registered at the bottom of src/addin.ts.
+      input: 'fleetAnalyticsDashboard.html',
       output: {
         format: 'iife',
         inlineDynamicImports: true,

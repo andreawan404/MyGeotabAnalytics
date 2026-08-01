@@ -106,15 +106,30 @@ export function fleetAnalyticsDashboard(deps: AddinDeps = defaultDeps) {
   };
 }
 
-// Per the SDK: "Each of the Add-Ins will need to define its own unique namespace
-// with the prefix geotab.addin" — the HOST DOES NOT PRE-CREATE IT. Create the
-// namespace (without clobbering an existing one); never merely check for it, or
-// registration silently no-ops and MyGeotab spins forever waiting for an add-in
-// that never registered. Only the `typeof window` check is a real guard, for
-// Node (addin.check.ts).
+// MyGeotab derives the entry key from the add-in HTML's FILE NAME and calls
+// geotab.addin.<filename-without-extension>. Verified against every official
+// sample: startStop.html -> startStop, tripsTimeline.html -> tripsTimeline,
+// ioxOutput.html -> ioxOutput, heatmap.html -> heatmap. So this key MUST stay
+// equal to the entry filename in vite.config.ts (fleetAnalyticsDashboard.html)
+// — a mismatch means initialize() is never called and the add-in renders blank.
+//
+// Create the namespace rather than only checking for it: the host does not
+// always pre-create it, and a silent skip leaves MyGeotab loading forever.
+const ADDIN_KEY = 'fleetAnalyticsDashboard';
+
 if (typeof window !== 'undefined') {
   const w = window as any;
   w.geotab = w.geotab || {};
   w.geotab.addin = w.geotab.addin || {};
-  w.geotab.addin.fleetAnalyticsDashboard = fleetAnalyticsDashboard;
+  w.geotab.addin[ADDIN_KEY] = fleetAnalyticsDashboard;
+
+  // Fail loudly in the console if the page was renamed without updating the key.
+  const entryName = window.location.pathname.split('/').pop()?.replace(/\.html?$/i, '');
+  if (entryName && entryName !== ADDIN_KEY) {
+    console.warn(
+      `fleetAnalyticsDashboard: page is "${entryName}.html" but the add-in is registered as ` +
+        `"${ADDIN_KEY}". MyGeotab looks up geotab.addin.${entryName} and will never call ` +
+        `initialize(). Rename the entry HTML to ${ADDIN_KEY}.html or change ADDIN_KEY to match.`
+    );
+  }
 }

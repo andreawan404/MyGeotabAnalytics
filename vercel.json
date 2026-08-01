@@ -1,6 +1,6 @@
 {
   "redirects": [
-    { "source": "/", "destination": "/dashboard.html", "permanent": false }
+    { "source": "/", "destination": "/fleetAnalyticsDashboard.html", "permanent": false }
   ],
   "headers": [
     {
