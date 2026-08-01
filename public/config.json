@@ -4,15 +4,14 @@
   "version": "1.0.0",
   "items": [
     {
-      "url": "dashboard.html",
+      "url": "https://my-geotab-analytics.vercel.app/dashboard.html",
       "path": "ActivityLink/",
       "menuName": {
-        "en": "Analytics Dashboard",
+        "en": "Fleet Analytics Dashboard",
         "id": "Dasbor Analitik"
       },
-      "icon": "icon.svg"
+      "icon": "https://my-geotab-analytics.vercel.app/icon.svg"
     }
   ],
-  "isSigned": false,
-  "files": "https://my-geotab-analytics.vercel.app/"
+  "isSigned": false
 }
