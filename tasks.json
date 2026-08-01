@@ -1,0 +1,182 @@
+{
+  "project": "mygeotab-analytics-addin",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Project scaffold (Vite + TS, config.json, folder struktur)",
+      "agent": "devops-agent",
+      "depends_on": [],
+      "status": "done",
+      "output": [
+        "vite.config.ts",
+        "config.json",
+        "package.json",
+        "src/addin.ts"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "geotabClient wrapper - multiCall batching, error/timeout handling",
+      "agent": "data-agent",
+      "depends_on": [
+        "T1"
+      ],
+      "status": "done",
+      "output": [
+        "src/api/geotabClient.ts"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "Entity fetchers: Trip, LogRecord, DeviceStatusInfo, ExceptionEvent, Zone",
+      "agent": "data-agent",
+      "depends_on": [
+        "T2"
+      ],
+      "status": "done",
+      "output": [
+        "src/api/fetchers/*.ts"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Caching layer (IndexedDB, scoped per database name)",
+      "agent": "integration-agent",
+      "depends_on": [
+        "T2"
+      ],
+      "status": "done",
+      "output": [
+        "src/utils/cache.ts"
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "addin.js lifecycle: initialize/focus/blur, state handling",
+      "agent": "integration-agent",
+      "depends_on": [
+        "T1"
+      ],
+      "status": "done",
+      "output": [
+        "src/addin.ts"
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "UI shell: layout grid, sidebar filter bar, theming MyGeotab",
+      "agent": "ui-agent",
+      "depends_on": [
+        "T5"
+      ],
+      "status": "done",
+      "output": [
+        "src/components/shell.ts",
+        "src/styles/*.css"
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "KPI card components (utilization, idle time, engine hours, exception count)",
+      "agent": "viz-agent",
+      "depends_on": [
+        "T3",
+        "T6"
+      ],
+      "status": "done",
+      "output": [
+        "src/components/kpi-card.ts"
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Heat map visualization (trip density / exception density)",
+      "agent": "viz-agent",
+      "depends_on": [
+        "T3",
+        "T6"
+      ],
+      "status": "done",
+      "output": [
+        "src/charts/heatmap.ts"
+      ]
+    },
+    {
+      "id": "T9",
+      "title": "Trip timeline chart",
+      "agent": "viz-agent",
+      "depends_on": [
+        "T3",
+        "T6"
+      ],
+      "status": "done",
+      "output": [
+        "src/charts/trip-timeline.ts"
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "Dashboard filters (date range, device group, zone)",
+      "agent": "ui-agent",
+      "depends_on": [
+        "T3",
+        "T6"
+      ],
+      "status": "done",
+      "output": [
+        "src/components/filter-bar.ts"
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "Production build (Vite bundle ke dist/)",
+      "agent": "devops-agent",
+      "depends_on": [
+        "T7",
+        "T8",
+        "T9",
+        "T10"
+      ],
+      "status": "done",
+      "output": [
+        "dist/"
+      ]
+    },
+    {
+      "id": "T12",
+      "title": "Deploy dist/ + config.json ke VPS (Caddy static hosting, subdomain jejakpantau.tech)",
+      "agent": "devops-agent",
+      "depends_on": [
+        "T11"
+      ],
+      "status": "pending",
+      "output": [
+        "deployment"
+      ]
+    },
+    {
+      "id": "T13",
+      "title": "Registrasi & validasi Add-In di MyGeotab (local + hosted config.json)",
+      "agent": "qa-agent",
+      "depends_on": [
+        "T12"
+      ],
+      "status": "pending",
+      "output": [
+        "qa-report.md"
+      ]
+    },
+    {
+      "id": "T14",
+      "title": "Performance test dengan volume data fleet real (banyak device/trip)",
+      "agent": "qa-agent",
+      "depends_on": [
+        "T13"
+      ],
+      "status": "pending",
+      "output": [
+        "qa-report.md"
+      ]
+    }
+  ]
+}
