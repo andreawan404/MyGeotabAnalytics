@@ -1,10 +1,29 @@
 /* Plain CSS, no framework (root CLAUDE.md + ui-agent CLAUDE.md). Neutral
    grays/blues to feel native inside the MyGeotab shell iframe. */
 
+/* One palette, so parallel view modules don't each invent their own blue.
+   These are the exact colors the rules below already used — adding the
+   variables changed nothing visually. */
+:root {
+  --fa-bg: #f5f6f8;
+  --fa-surface: #fff;
+  --fa-border: #e2e5e9;
+  --fa-text: #1f2937;
+  --fa-muted: #6b7280;
+  --fa-accent: #3b82f6;
+  --fa-danger: #b91c1c;
+  --fa-low-bg: #dbeafe;
+  --fa-low-fg: #1d4ed8;
+  --fa-med-bg: #fef3c7;
+  --fa-med-fg: #b45309;
+  --fa-high-bg: #fee2e2;
+  --fa-high-fg: #b91c1c;
+}
+
 .fa-dashboard {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-  color: #1f2937;
-  background: #f5f6f8;
+  color: var(--fa-text);
+  background: var(--fa-bg);
   min-height: 100%;
 }
 
@@ -13,8 +32,8 @@
   align-items: baseline;
   gap: 0.75rem;
   padding: 1rem 1.5rem;
-  background: #ffffff;
-  border-bottom: 1px solid #e2e5e9;
+  background: var(--fa-surface);
+  border-bottom: 1px solid var(--fa-border);
 }
 
 .fa-header h1 {
@@ -25,31 +44,68 @@
 
 .fa-database {
   font-size: 0.85rem;
-  color: #6b7280;
+  color: var(--fa-muted);
 }
 
+/* side menu | body */
 .fa-layout {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 200px 1fr;
   gap: 1.5rem;
   padding: 1.5rem;
   align-items: start;
 }
 
-@media (max-width: 720px) {
-  .fa-layout {
-    grid-template-columns: 1fr;
-  }
+.fa-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-width: 0;
 }
 
+.fa-sidemenu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+.fa-nav-item {
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fa-text);
+  cursor: pointer;
+}
+
+.fa-nav-item:hover {
+  background: var(--fa-bg);
+}
+
+.fa-nav-item[aria-current='page'] {
+  background: var(--fa-accent);
+  color: var(--fa-surface);
+  font-weight: 600;
+}
+
+/* Filter bar sits above the views now, so it reads as a row of controls. */
 .fa-filter {
-  background: #ffffff;
-  border: 1px solid #e2e5e9;
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
   border-radius: 8px;
   padding: 1rem;
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
 }
 
 .fa-field {
@@ -66,15 +122,25 @@
   padding: 0.4rem 0.5rem;
   border: 1px solid #d1d5db;
   border-radius: 6px;
-  background: #fff;
-  color: #1f2937;
+  background: var(--fa-surface);
+  color: var(--fa-text);
 }
 
-.fa-main {
+.fa-views {
+  min-width: 0;
+}
+
+.fa-view {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
   min-width: 0;
+}
+
+/* display:flex above would otherwise beat the hidden attribute, and view-host
+   hides inactive views instead of unmounting them. */
+.fa-view[hidden] {
+  display: none;
 }
 
 .fa-kpi-row {
@@ -84,15 +150,15 @@
 }
 
 .fa-kpi-card {
-  background: #ffffff;
-  border: 1px solid #e2e5e9;
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
   border-radius: 8px;
   padding: 1rem;
 }
 
 .fa-kpi-label {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--fa-muted);
   text-transform: uppercase;
   letter-spacing: 0.02em;
 }
@@ -102,6 +168,25 @@
   font-weight: 600;
   margin-top: 0.25rem;
   color: #111827;
+}
+
+/* Secondary line under a KPI value: the utilization working-hours inputs and
+   the engine-hours "this is an estimate" caveat. */
+.fa-kpi-note {
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--fa-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.fa-kpi-note input {
+  font: inherit;
+  width: 3.5rem;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
 }
 
 .fa-badge {
@@ -114,24 +199,24 @@
 }
 
 .fa-badge-low {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--fa-low-bg);
+  color: var(--fa-low-fg);
 }
 
 .fa-badge-medium {
-  background: #fef3c7;
-  color: #b45309;
+  background: var(--fa-med-bg);
+  color: var(--fa-med-fg);
 }
 
 .fa-badge-high {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: var(--fa-high-bg);
+  color: var(--fa-high-fg);
 }
 
 .fa-heatmap,
 .fa-timeline {
-  background: #ffffff;
-  border: 1px solid #e2e5e9;
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
   border-radius: 8px;
   padding: 0.75rem;
   position: relative;
@@ -150,7 +235,64 @@
   height: 100% !important;
 }
 
-.fa-error {
-  color: #b91c1c;
+/* Shared by every view: "no data" / "not ready yet" placeholder. */
+.fa-empty {
+  margin: 0;
+  padding: 1.5rem;
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  color: var(--fa-muted);
   font-size: 0.85rem;
+}
+
+/* Shared by every view that lists rows (devices, exceptions, faults). */
+.fa-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.fa-table th,
+.fa-table td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--fa-border);
+}
+
+.fa-table th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--fa-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.fa-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.fa-error {
+  color: var(--fa-danger);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 720px) {
+  .fa-layout {
+    grid-template-columns: 1fr;
+  }
+
+  /* Menu becomes a horizontal strip above the content. */
+  .fa-sidemenu {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .fa-nav-item {
+    width: auto;
+    white-space: nowrap;
+  }
 }

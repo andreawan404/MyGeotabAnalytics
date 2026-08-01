@@ -5,7 +5,22 @@
 // runs unmodified, exactly as it would against a real database.
 
 import type { GeotabApi } from '../src/api/geotabClient';
-import { rawTrips, rawLogRecords, rawDeviceStatusInfo, rawExceptionEvents, rawZones, rawDevices, rawGroups } from './fixtures';
+import {
+  rawTrips,
+  rawLogRecords,
+  rawDeviceStatusInfo,
+  rawExceptionEvents,
+  rawZones,
+  rawDevices,
+  rawGroups,
+  rawRules,
+  rawDiagnostics,
+  rawStatusData,
+  rawFaultData,
+  rawFuelTransactions,
+  rawDrivers,
+  rawDvirLogs,
+} from './fixtures';
 
 const FIXTURES_BY_TYPE_NAME: Record<string, any[]> = {
   Trip: rawTrips,
@@ -15,17 +30,37 @@ const FIXTURES_BY_TYPE_NAME: Record<string, any[]> = {
   Zone: rawZones,
   Device: rawDevices,
   Group: rawGroups,
+  Rule: rawRules,
+  Diagnostic: rawDiagnostics,
+  StatusData: rawStatusData,
+  FaultData: rawFaultData,
+  FuelTransaction: rawFuelTransactions,
+  User: rawDrivers,
+  DVIRLog: rawDvirLogs,
 };
 
-// ponytail: params.search is ignored entirely — dev mode always returns the
-// full fixture set for the requested typeName regardless of date-range/group/
-// zone filters. Fine for visual/structural testing; filter-logic correctness
-// is already covered by src/api/fetchers/fetchers.check.ts. Add real filtering
-// here if a scenario needs to see fewer results, not more coverage.
+// ponytail: params.search is ignored — dev mode returns the full fixture set for
+// the requested typeName regardless of date-range/group/zone filters. Fine for
+// visual/structural testing; filter-logic correctness is covered by
+// src/api/fetchers/fetchers.check.ts. Add real filtering here only if a scenario
+// needs to see fewer results.
+//
+// The ONE exception is StatusData's diagnosticSearch. StatusData is always queried
+// per-diagnostic, and probeDiagnostics() decides a diagnostic is "available" by
+// asking whether its result array is non-empty. Ignoring the filter would return
+// every diagnostic's rows for every probe, so everything would look available and
+// the auto-detection would be silently meaningless in dev.
 function resolve(method: string, params: any): any[] {
   if (method !== 'Get') return [];
   const typeName = params?.typeName as string | undefined;
-  return (typeName && FIXTURES_BY_TYPE_NAME[typeName]) || [];
+  const rows = (typeName && FIXTURES_BY_TYPE_NAME[typeName]) || [];
+
+  const diagnosticId = params?.search?.diagnosticSearch?.id;
+  if (typeName === 'StatusData' && diagnosticId) {
+    const matched = rows.filter((r) => r.diagnostic?.id === diagnosticId);
+    return params.resultsLimit ? matched.slice(0, params.resultsLimit) : matched;
+  }
+  return rows;
 }
 
 const LATENCY_MS = 50;

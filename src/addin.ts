@@ -1,13 +1,15 @@
 // MyGeotab Add-In entrypoint. Thin composition only — wires the host
-// lifecycle (initialize/focus/blur) to the shell + the 5 init* components.
+// lifecycle (initialize/focus/blur) to the shell + the 3 init* components.
 // No business logic here (root CLAUDE.md).
+//
+// The charts are no longer wired here: view-host mounts them via the
+// "overview" view (src/views/registry.ts).
 
 import { initGeotabClient, type GeotabApi } from './api/geotabClient';
 import { renderShell } from './components/shell';
 import { initFilterBar } from './components/filter-bar';
-import { initKpiCards } from './components/kpi-card';
-import { initHeatmap } from './charts/heatmap';
-import { initTripTimeline } from './charts/trip-timeline';
+import { initSideMenu } from './components/side-menu';
+import { initViewHost } from './components/view-host';
 
 export interface GeotabAddinState {
   database: string;
@@ -22,9 +24,8 @@ export interface AddinDeps {
   getAppElement: () => HTMLElement | null;
   renderShell: typeof renderShell;
   initFilterBar: typeof initFilterBar;
-  initKpiCards: typeof initKpiCards;
-  initHeatmap: typeof initHeatmap;
-  initTripTimeline: typeof initTripTimeline;
+  initSideMenu: typeof initSideMenu;
+  initViewHost: typeof initViewHost;
 }
 
 const defaultDeps: AddinDeps = {
@@ -42,9 +43,8 @@ const defaultDeps: AddinDeps = {
   },
   renderShell,
   initFilterBar,
-  initKpiCards,
-  initHeatmap,
-  initTripTimeline,
+  initSideMenu,
+  initViewHost,
 };
 
 /** Set by initialize(); read by the diagnostic timer at the bottom of this file. */
@@ -71,11 +71,11 @@ export function createAddin(deps: AddinDeps = defaultDeps) {
         const ctx = { database: state.database, rootEl: shell.rootEl };
 
         // Wire each component independently so one failure doesn't take the rest down.
+        // filter-bar FIRST: it publishes the current filter that views read at mount.
         for (const [name, init, container] of [
           ['filter-bar', deps.initFilterBar, shell.filterBarContainer],
-          ['kpi-cards', deps.initKpiCards, shell.kpiContainer],
-          ['heatmap', deps.initHeatmap, shell.heatmapContainer],
-          ['trip-timeline', deps.initTripTimeline, shell.timelineContainer],
+          ['side-menu', deps.initSideMenu, shell.sideMenuContainer],
+          ['view-host', deps.initViewHost, shell.viewContainer],
         ] as [string, (c: HTMLElement, x: typeof ctx) => Cleanup, HTMLElement][]) {
           try {
             cleanups.push(init(container, ctx));

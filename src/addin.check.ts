@@ -1,19 +1,28 @@
-﻿// KNOWN LIMITATION: this does not currently execute under plain Node/tsx.
-// Importing ./addin transitively loads charts/heatmap.ts -> leaflet, and
-// Leaflet touches `window` at module scope, so the import throws before any
-// assert runs. Same root limitation as heatmap.check.ts. Verified instead in a
-// real browser via the dev harness (dev/dev-dashboard.html). Kept because the
-// assertions below are the executable spec for the lifecycle contract, and
-// they run as soon as that import chain is browser-independent.
+﻿// Importing ./addin transitively loads a .css file (unknown extension to Node)
+// and leaflet (touches `document` at module scope), either of which throws
+// before an assert can run. Every assertion below drives createAddin() through
+// injected fakes, so those modules are never actually exercised — stub them at
+// resolve time and the whole lifecycle spec runs under plain `tsx`.
 //
 // What it specifies: (1) blur() is safe before initialize() ever ran;
-// (2) initialize() wires all 4 components and blur() invokes each cleanup
+// (2) initialize() wires all 3 components and blur() invokes each cleanup
 // exactly once, idempotently; (3) callback() ALWAYS fires â€” even when a
 // component throws, or when initialize() itself throws. (3) is the contract
 // whose violation left the add-in spinning forever in MyGeotab.
 
 import assert from 'node:assert';
-import { createAddin, fleetAnalyticsDashboard } from './addin';
+import { registerHooks } from 'node:module';
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    return /\.css$|^leaflet/.test(specifier)
+      ? { url: 'data:text/javascript,export default {}', shortCircuit: true }
+      : nextResolve(specifier, context);
+  },
+});
+
+// Dynamic so the hook above is registered before ./addin's import chain resolves.
+const { createAddin, fleetAnalyticsDashboard } = await import('./addin');
 
 // blur() before initialize() must be a safe no-op, not a crash.
 const neverInitialized = createAddin();
@@ -31,14 +40,12 @@ const addin = createAddin({
   renderShell: () => ({
     rootEl: {} as any,
     filterBarContainer: {} as any,
-    kpiContainer: {} as any,
-    heatmapContainer: {} as any,
-    timelineContainer: {} as any,
+    sideMenuContainer: {} as any,
+    viewContainer: {} as any,
   }),
   initFilterBar: () => fakeCleanup,
-  initKpiCards: () => fakeCleanup,
-  initHeatmap: () => fakeCleanup,
-  initTripTimeline: () => fakeCleanup,
+  initSideMenu: () => fakeCleanup,
+  initViewHost: () => fakeCleanup,
 });
 
 let callbackCalled = false;
@@ -48,10 +55,10 @@ addin.initialize({} as any, { database: 'testdb' }, () => {
 assert.strictEqual(callbackCalled, true, 'expected callback() to be invoked synchronously by initialize()');
 
 addin.blur();
-assert.strictEqual(cleanupCalls, 4, 'expected all 4 cleanup functions to be called exactly once');
+assert.strictEqual(cleanupCalls, 3, 'expected all 3 cleanup functions to be called exactly once');
 
 addin.blur();
-assert.strictEqual(cleanupCalls, 4, 'expected a second blur() call to not re-invoke cleanups');
+assert.strictEqual(cleanupCalls, 3, 'expected a second blur() call to not re-invoke cleanups');
 
 // The spinner in MyGeotab only clears when callback() runs, so a throwing
 // component must NOT prevent it â€” the whole reason the add-in hung before.
@@ -63,20 +70,16 @@ const throwingAddin = createAddin({
   renderShell: () => ({
     rootEl: {} as any,
     filterBarContainer: {} as any,
-    kpiContainer: {} as any,
-    heatmapContainer: {} as any,
-    timelineContainer: {} as any,
+    sideMenuContainer: {} as any,
+    viewContainer: {} as any,
   }),
   initFilterBar: () => () => {
     survivorCleanups++;
   },
-  initKpiCards: () => {
+  initSideMenu: () => {
     throw new Error('boom: simulated component failure');
   },
-  initHeatmap: () => () => {
-    survivorCleanups++;
-  },
-  initTripTimeline: () => () => {
+  initViewHost: () => () => {
     survivorCleanups++;
   },
 });
@@ -85,9 +88,9 @@ throwingAddin.initialize({} as any, { database: 'testdb' }, () => {
 });
 assert.strictEqual(cbAfterThrow, true, 'expected callback() to still run when a component throws');
 
-// The surviving 3 components must still be wired and cleanable.
+// The surviving 2 components must still be wired and cleanable.
 throwingAddin.blur();
-assert.strictEqual(survivorCleanups, 3, 'expected the 3 non-throwing components to still register cleanups');
+assert.strictEqual(survivorCleanups, 2, 'expected the 2 non-throwing components to still register cleanups');
 
 // A failure inside initialize() itself (before components) must also reach callback().
 let cbAfterFatal = false;
@@ -98,9 +101,8 @@ const fatalAddin = createAddin({
   getAppElement: () => ({} as any),
   renderShell: () => ({}) as any,
   initFilterBar: () => () => {},
-  initKpiCards: () => () => {},
-  initHeatmap: () => () => {},
-  initTripTimeline: () => () => {},
+  initSideMenu: () => () => {},
+  initViewHost: () => () => {},
 });
 fatalAddin.initialize({} as any, { database: 'testdb' }, () => {
   cbAfterFatal = true;

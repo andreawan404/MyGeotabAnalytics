@@ -1,9 +1,11 @@
 import { callApi } from '../geotabClient';
 import { getCached, setCached, buildCacheKey } from '../../utils/cache';
 import type { TripDTO } from './types';
-import { parseIsoDurationSec } from './parseDuration';
+import { parseDurationSec } from './parseDuration';
+import { groupDeviceSearch } from './search';
 
 const TTL_MS = 5 * 60 * 1000;
+const RESULTS_LIMIT = 50000;
 
 // ponytail: assuming raw Trip carries startLatitude/startLongitude/
 // stopLatitude/stopLongitude (not spelled out in the public object docs).
@@ -16,12 +18,16 @@ function toDTO(raw: any): TripDTO {
     start: raw.start,
     stop: raw.stop,
     distanceKm: raw.distance ?? 0,
-    drivingDurationSec: parseIsoDurationSec(raw.drivingDuration),
-    idlingDurationSec: parseIsoDurationSec(raw.idlingDuration),
+    drivingDurationSec: parseDurationSec(raw.drivingDuration),
+    idlingDurationSec: parseDurationSec(raw.idlingDuration),
     startLat: raw.startLatitude ?? 0,
     startLon: raw.startLongitude ?? 0,
     stopLat: raw.stopLatitude ?? 0,
     stopLon: raw.stopLongitude ?? 0,
+    // Geotab reports an unidentified driver as the sentinel "UnknownDriverId".
+    // Normalise that to undefined so callers can treat "no driver" uniformly —
+    // this is what gates the per-driver ranking in the safety module.
+    driverId: raw.driver?.id && raw.driver.id !== 'UnknownDriverId' ? raw.driver.id : undefined,
   };
 }
 
@@ -40,8 +46,9 @@ export async function fetchTrips(params: {
     search: {
       fromDate: params.fromDate,
       toDate: params.toDate,
-      groupSearch: params.groupId ? [{ id: params.groupId }] : undefined,
+      ...groupDeviceSearch(params.groupId),
     },
+    resultsLimit: RESULTS_LIMIT,
   });
 
   const dtos = raw.map(toDTO);

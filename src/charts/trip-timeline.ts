@@ -6,6 +6,7 @@ import { Chart, registerables } from 'chart.js';
 import { fetchTrips } from '../api/fetchers/trip';
 import { fetchDevices } from '../api/fetchers/device';
 import type { TripDTO, DeviceLite, FilterChangeDetail } from '../api/fetchers/types';
+import { defaultDateRange, toUtcRange } from '../utils/date-range';
 
 Chart.register(...registerables);
 
@@ -26,15 +27,6 @@ export function tripsToFloatingBars(
   }));
 }
 
-// ponytail: default-range helper duplicated across the 5 decoupled files by
-// design (see kpi-card.ts comment) — no cross-imports until integration phase.
-function defaultDateRange(): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - 7);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
-}
-
 export function initTripTimeline(container: HTMLElement, ctx: { database: string; rootEl: HTMLElement }): () => void {
   const canvas = document.createElement('canvas');
   container.appendChild(canvas);
@@ -43,9 +35,10 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
 
   async function load(dateFrom: string, dateTo: string, groupId?: string) {
     try {
+      const { fromIso, toIso } = toUtcRange(dateFrom, dateTo);
       const [trips, devices] = await Promise.all([
-        fetchTrips({ database: ctx.database, fromDate: dateFrom, toDate: dateTo, groupId }),
-        fetchDevices({ database: ctx.database, groupId }),
+        fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
+        fetchDevices({ database: ctx.database, groupId, fromDate: fromIso, toDate: toIso }),
       ]);
       const bars = tripsToFloatingBars(trips, devices);
 
@@ -94,7 +87,7 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
   }
 
   const initial = defaultDateRange();
-  load(initial.from, initial.to);
+  load(initial.dateFrom, initial.dateTo);
   ctx.rootEl.addEventListener('dashboard:filter-change', onFilterChange);
 
   return () => {

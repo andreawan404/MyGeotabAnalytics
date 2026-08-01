@@ -26,12 +26,17 @@ export async function fetchDeviceStatus(params: {
   const cached = await getCached<DeviceStatusDTO[]>(key);
   if (cached) return cached;
 
+  // deviceSearch is a SINGLE DeviceSearch object, not an array — an array is an
+  // unknown search property and MyGeotab silently ignores it (returning the whole
+  // fleet). Only one id can be pushed server-side; anything else is filtered here.
+  const ids = params.deviceIds ?? [];
   const raw = await callApi<any[]>('Get', {
     typeName: 'DeviceStatusInfo',
-    search: params.deviceIds?.length ? { deviceSearch: params.deviceIds.map((id) => ({ id })) } : undefined,
+    search: ids.length === 1 ? { deviceSearch: { id: ids[0] } } : undefined,
   });
 
-  const dtos = raw.map(toDTO);
+  const wanted = new Set(ids);
+  const dtos = raw.map(toDTO).filter((d) => wanted.size === 0 || wanted.has(d.deviceId));
   await setCached(key, dtos, TTL_MS);
   return dtos;
 }

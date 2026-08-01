@@ -15,6 +15,11 @@ function geotabClassicScript(): Plugin {
   return {
     name: 'geotab-classic-script',
     enforce: 'post',
+    // BUILD ONLY. The dev server serves raw TypeScript over native ES modules,
+    // so stripping type="module" there breaks it with "Cannot use import
+    // statement outside a module" — the classic-script shape is only correct
+    // for the IIFE bundle rollup emits at build time.
+    apply: 'build',
     transformIndexHtml(html) {
       return html.replace(/ type="module"/g, '').replace(/ crossorigin/g, '');
     },

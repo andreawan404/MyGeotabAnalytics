@@ -1,14 +1,16 @@
-// Layout shell: header + CSS grid (filter sidebar, KPI row, heat map, timeline).
+// Layout shell: header + CSS grid (side menu | filter bar over the view host).
 // ui-agent scope only — no data fetching here (root CLAUDE.md).
+//
+// The shell no longer knows about KPIs/heat map/timeline: those are the
+// overview view's own children now (src/views/overview.ts).
 
 import '../styles/dashboard.css';
 
 export interface DashboardShell {
   rootEl: HTMLElement;
   filterBarContainer: HTMLElement;
-  kpiContainer: HTMLElement;
-  heatmapContainer: HTMLElement;
-  timelineContainer: HTMLElement;
+  sideMenuContainer: HTMLElement;
+  viewContainer: HTMLElement;
 }
 
 export function renderShell(root: HTMLElement, ctx: { database: string }): DashboardShell {
@@ -19,12 +21,11 @@ export function renderShell(root: HTMLElement, ctx: { database: string }): Dashb
       <span class="fa-database"></span>
     </header>
     <div class="fa-layout">
-      <aside class="fa-filter" id="fa-filter"></aside>
-      <main class="fa-main">
-        <section class="fa-kpi-row" id="fa-kpi"></section>
-        <section class="fa-heatmap" id="fa-heatmap"></section>
-        <section class="fa-timeline" id="fa-timeline"></section>
-      </main>
+      <nav class="fa-sidemenu" id="fa-menu"></nav>
+      <div class="fa-body">
+        <section class="fa-filter" id="fa-filter"></section>
+        <main class="fa-views" id="fa-views"></main>
+      </div>
     </div>
   `;
 
@@ -34,8 +35,7 @@ export function renderShell(root: HTMLElement, ctx: { database: string }): Dashb
   return {
     rootEl: root,
     filterBarContainer: root.querySelector('#fa-filter')!,
-    kpiContainer: root.querySelector('#fa-kpi')!,
-    heatmapContainer: root.querySelector('#fa-heatmap')!,
-    timelineContainer: root.querySelector('#fa-timeline')!,
+    sideMenuContainer: root.querySelector('#fa-menu')!,
+    viewContainer: root.querySelector('#fa-views')!,
   };
 }

@@ -5,6 +5,13 @@ const DB_NAME = 'fleet-analytics-cache';
 const STORE_NAME = 'cache';
 const DB_VERSION = 1;
 
+// Bump this whenever a DTO's shape or MEANING changes. Already-persisted records
+// then simply stop being addressed and expire on their own TTL — far safer than
+// bumping DB_VERSION, which would re-run onupgradeneeded. v2: durations were
+// persisted as 0 by the old ISO-only duration parser, and every exception as
+// severity "low"; those poisoned records would mask the fix for up to 30 min.
+const SCHEMA_VERSION = 'v2';
+
 interface CacheRecord<T> {
   value: T;
   expiresAt: number;
@@ -20,7 +27,11 @@ function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
-      req.result.createObjectStore(STORE_NAME);
+      // Unconditional createObjectStore throws ConstraintError on any future
+      // DB_VERSION bump, taking the whole cache layer down with it.
+      if (!req.result.objectStoreNames.contains(STORE_NAME)) {
+        req.result.createObjectStore(STORE_NAME);
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -63,5 +74,5 @@ export async function setCached<T>(key: string, value: T, ttlMs: number): Promis
 }
 
 export function buildCacheKey(database: string, ...parts: Array<string | number>): string {
-  return [database, ...parts].join(':');
+  return [SCHEMA_VERSION, database, ...parts].join(':');
 }

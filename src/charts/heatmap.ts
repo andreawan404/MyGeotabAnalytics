@@ -9,10 +9,14 @@ import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
 import { fetchLogRecords } from '../api/fetchers/logrecord';
 import type { FilterChangeDetail } from '../api/fetchers/types';
+import { defaultDateRange, toUtcRange } from '../utils/date-range';
 
 const DEFAULT_CENTER: [number, number] = [0, 0];
 const DEFAULT_ZOOM = 2;
-const RESULTS_LIMIT = 20000; // bounded fetch; aggregatePoints keeps the heat layer light even at this volume
+// Matches logrecord.ts's own hard ceiling — asking for more was a dead number.
+// No visual loss: aggregatePoints collapses everything into ~111m cells first,
+// so points beyond this only deepen buckets that are already saturated.
+const RESULTS_LIMIT = 5000;
 
 /**
  * Grid-buckets lat/lon points by rounding to `precision` decimals (default 3,
@@ -41,15 +45,6 @@ export function aggregatePoints(
   return [...buckets.values()];
 }
 
-// ponytail: default-range helper duplicated across the 5 decoupled files by
-// design (see kpi-card.ts comment) — no cross-imports until integration phase.
-function defaultDateRange(): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - 7);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
-}
-
 export function initHeatmap(container: HTMLElement, ctx: { database: string; rootEl: HTMLElement }): () => void {
   const map = L.map(container).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -58,26 +53,49 @@ export function initHeatmap(container: HTMLElement, ctx: { database: string; roo
   }).addTo(map);
 
   let heatLayer: L.Layer | null = null;
+  // Latest aggregated data, kept so the layer can be detached while hidden and
+  // rebuilt on return. leaflet.heat renders via getImageData, which throws
+  // "source width is 0" on a 0x0 canvas — and Leaflet redraws on ANY window
+  // resize, including for maps sitting inside a hidden view. Detaching is the
+  // only way to make that structurally impossible rather than merely unlikely.
+  let lastBuckets: [number, number, number][] = [];
 
-  async function load(dateFrom: string, dateTo: string) {
+  const isVisible = () => container.clientWidth > 0 && container.clientHeight > 0;
+
+  function detachHeat() {
+    if (heatLayer) {
+      map.removeLayer(heatLayer);
+      heatLayer = null;
+    }
+  }
+
+  function applyBuckets(buckets: [number, number, number][], fit: boolean) {
+    detachHeat();
+    if (buckets.length === 0) return;
+
+    heatLayer = L.heatLayer(buckets, { radius: 20 }).addTo(map);
+    if (!fit) return;
+    const bounds = L.latLngBounds(buckets.map(([lat, lon]): [number, number] => [lat, lon]));
+    map.fitBounds(bounds, { maxZoom: 14 });
+  }
+
+  async function load(dateFrom: string, dateTo: string, groupId?: string) {
     try {
+      const { fromIso, toIso } = toUtcRange(dateFrom, dateTo);
       const records = await fetchLogRecords({
         database: ctx.database,
-        fromDate: dateFrom,
-        toDate: dateTo,
+        fromDate: fromIso,
+        toDate: toIso,
+        groupId,
         resultsLimit: RESULTS_LIMIT,
       });
-      const buckets = aggregatePoints(records);
+      lastBuckets = aggregatePoints(records);
 
-      if (heatLayer) {
-        map.removeLayer(heatLayer);
-        heatLayer = null;
-      }
-      if (buckets.length === 0) return;
-
-      heatLayer = L.heatLayer(buckets, { radius: 20 }).addTo(map);
-      const bounds = L.latLngBounds(buckets.map(([lat, lon]): [number, number] => [lat, lon]));
-      map.fitBounds(bounds, { maxZoom: 14 });
+      // The fetch is async: the user may have switched views while it was in
+      // flight, so re-check visibility here rather than at call time. The layer
+      // is rebuilt from lastBuckets by onViewShown when we come back.
+      if (!isVisible()) return;
+      applyBuckets(lastBuckets, true);
     } catch (err) {
       console.error('heatmap: load failed', err);
     }
@@ -85,15 +103,36 @@ export function initHeatmap(container: HTMLElement, ctx: { database: string; roo
 
   function onFilterChange(e: Event) {
     const detail = (e as CustomEvent<FilterChangeDetail>).detail;
-    load(detail.dateFrom, detail.dateTo);
+    load(detail.dateFrom, detail.dateTo, detail.groupId);
+  }
+
+  // Leaflet measures its container once, at creation. Inside a hidden view that
+  // measurement is 0x0, so the map renders grey tiles until it is told to
+  // re-measure — every single time the user comes back to this view.
+  //
+  // `dashboard:view-shown` is broadcast on the SHARED rootEl, so this fires when
+  // ANY view is revealed, including ones that hide us. Invalidating while our own
+  // container is 0x0 makes leaflet.heat redraw into a zero-width canvas and throw
+  // "getImageData: source width is 0" — so only act when we are the visible view.
+  function onViewShown() {
+    // Fires for EVERY view on the shared rootEl, so this is also how we learn we
+    // have just been hidden: drop the heat layer so no resize can redraw it at 0x0.
+    if (!isVisible()) {
+      detachHeat();
+      return;
+    }
+    map.invalidateSize();
+    if (!heatLayer) applyBuckets(lastBuckets, false); // keep the user's pan/zoom
   }
 
   const initial = defaultDateRange();
-  load(initial.from, initial.to);
+  load(initial.dateFrom, initial.dateTo);
   ctx.rootEl.addEventListener('dashboard:filter-change', onFilterChange);
+  ctx.rootEl.addEventListener('dashboard:view-shown', onViewShown);
 
   return () => {
     ctx.rootEl.removeEventListener('dashboard:filter-change', onFilterChange);
+    ctx.rootEl.removeEventListener('dashboard:view-shown', onViewShown);
     map.remove();
   };
 }

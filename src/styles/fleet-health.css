@@ -1,0 +1,56 @@
+/* Monitoring Kesehatan Armada. Only the classes this view owns (fh-*) — the
+   shared fa-* classes come from dashboard.css untouched, and every color here
+   is one of its custom properties so there is no second palette to keep in sync. */
+
+.fh-panel {
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem 1rem;
+}
+
+/* .fa-kpi-row is display:grid and .fa-view is display:flex, so both would beat
+   the hidden attribute's UA display:none. Scoped to the fh-* classes rather than
+   patching the shared rules. */
+.fh-panel[hidden],
+.fh-kpi[hidden] {
+  display: none;
+}
+
+.fh-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--fa-text);
+  margin: 0 0 0.75rem;
+}
+
+/* Chart.js with maintainAspectRatio:false sizes to its parent — without an
+   explicit height here the canvas collapses to 0 and nothing renders. */
+.fh-chart-box {
+  position: relative;
+  height: 320px;
+}
+
+.fh-chart-box canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.fh-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: var(--fa-muted);
+}
+
+/* A non-zero critical-lamp count is the one number in the table worth spotting
+   from across the room. */
+.fh-critical {
+  display: inline-block;
+  min-width: 1.5rem;
+  text-align: center;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--fa-high-bg);
+  color: var(--fa-high-fg);
+}

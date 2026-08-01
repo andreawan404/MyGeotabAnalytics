@@ -1,0 +1,96 @@
+/* Safety Behaviour view. Colors come exclusively from the dashboard.css custom
+   properties — no new hex here, and no restyling of shared classes
+   (.fa-kpi-*, .fa-table, .fa-empty, .fa-badge-*) which other views also render. */
+
+.fa-safety {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+/* Two charts side by side on wide screens, stacked when narrow. auto-fit +
+   minmax does the breakpoint without a media query. */
+.fa-safety-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+/* Chart.js with maintainAspectRatio:false sizes to its PARENT, so the parent
+   needs an explicit height or the canvas collapses to 0px. */
+.fa-safety-card {
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem 1rem;
+  min-width: 0;
+}
+
+.fa-safety-card h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+  color: var(--fa-text);
+}
+
+.fa-safety-canvas {
+  position: relative;
+  height: 300px;
+}
+
+.fa-safety-section h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  color: var(--fa-text);
+}
+
+/* Honest-caveat copy: the duration-as-intensity proxy, and the reason the driver
+   ranking is missing. Deliberately quiet but always present — a caveat that only
+   shows on hover is a caveat nobody reads. */
+.fa-safety-caveat {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--fa-muted);
+}
+
+.fa-safety-caveat + .fa-safety-caveat {
+  margin-top: 0.35rem;
+}
+
+/* Reuses the badge shape from dashboard.css without touching .fa-badge itself. */
+.fa-safety-flag {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: var(--fa-med-bg);
+  color: var(--fa-med-fg);
+  margin-right: 0.35rem;
+}
+
+/* Wide ranking tables scroll rather than pushing the whole dashboard sideways. */
+.fa-safety-tablewrap {
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.fa-safety-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The worst three units carry the coaching priority. */
+.fa-safety-worst .fa-safety-num {
+  color: var(--fa-high-fg);
+  font-weight: 600;
+}
+
+/* "—" for a unit with 0 km: unknown rate, not a zero rate. */
+.fa-safety-na {
+  color: var(--fa-muted);
+}

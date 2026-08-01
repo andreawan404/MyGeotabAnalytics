@@ -5,16 +5,26 @@
 
 import { fetchGroups } from '../api/fetchers/group';
 import { fetchZones } from '../api/fetchers/zone';
+import type { FilterChangeDetail } from '../api/fetchers/types';
+import { defaultDateRange } from '../utils/date-range';
 
-export function getDefaultFilters(): { dateFrom: string; dateTo: string; groupId?: string; zoneId?: string } {
-  const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - 7);
-  return { dateFrom: toISODate(from), dateTo: toISODate(to) };
+/** Bursts of `change` events (date spinners, a fast group+zone edit) would each
+ *  fan out to every mounted view. One emit per settled edit is enough. */
+const DEBOUNCE_MS = 300;
+
+// ponytail: module-level singleton, not per-instance state. MyGeotab loads
+// exactly ONE add-in instance per iframe, so there is never a second filter bar
+// to get confused about. This is how a view mounted later learns the current
+// filter (views/*.ts call getCurrentFilter() at init) — no event replay.
+let lastFilter: FilterChangeDetail | null = null;
+
+export function getDefaultFilters(): FilterChangeDetail {
+  return defaultDateRange();
 }
 
-function toISODate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+/** The filter as it stands right now — for views that mount after the last emit. */
+export function getCurrentFilter(): FilterChangeDetail {
+  return lastFilter ?? getDefaultFilters();
 }
 
 export function initFilterBar(container: HTMLElement, ctx: { database: string; rootEl: HTMLElement }): () => void {
@@ -47,24 +57,33 @@ export function initFilterBar(container: HTMLElement, ctx: { database: string; r
     .then((zones) => appendOptions(zoneEl, zones))
     .catch((err) => console.error('filter-bar: fetchZones failed', err));
 
+  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function emitNow() {
+    // Record BEFORE dispatching: a listener may call getCurrentFilter().
+    lastFilter = {
+      dateFrom: dateFromEl.value,
+      dateTo: dateToEl.value,
+      groupId: groupEl.value || undefined,
+      zoneId: zoneEl.value || undefined,
+    };
+    ctx.rootEl.dispatchEvent(new CustomEvent('dashboard:filter-change', { bubbles: true, detail: lastFilter }));
+  }
+
   function emitChange() {
-    ctx.rootEl.dispatchEvent(
-      new CustomEvent('dashboard:filter-change', {
-        bubbles: true,
-        detail: {
-          dateFrom: dateFromEl.value,
-          dateTo: dateToEl.value,
-          groupId: groupEl.value || undefined,
-          zoneId: zoneEl.value || undefined,
-        },
-      })
-    );
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(emitNow, DEBOUNCE_MS);
   }
 
   const controls = [dateFromEl, dateToEl, groupEl, zoneEl];
   controls.forEach((el) => el.addEventListener('change', emitChange));
 
+  // Populate lastFilter immediately (undebounced) so a view mounting in this
+  // same tick already sees the real filter rather than falling back to defaults.
+  emitNow();
+
   return () => {
+    clearTimeout(debounceTimer);
     controls.forEach((el) => el.removeEventListener('change', emitChange));
   };
 }

@@ -1,0 +1,117 @@
+/* Konsumsi BBM view. Only the custom properties declared in dashboard.css —
+   no new hex, and nothing here restyles a shared class (.fa-kpi-*, .fa-table,
+   .fa-field, .fa-empty are owned by dashboard.css). */
+
+/* The source banner. Always visible, and visually loud in proportion to how
+   much of the number is guessed. */
+.fa-fuel-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
+  border-left: 4px solid var(--fa-accent);
+  border-radius: 8px;
+}
+
+.fa-fuel-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.fa-fuel-banner-text strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--fa-text);
+}
+
+.fa-fuel-banner-text small {
+  font-size: 0.75rem;
+  color: var(--fa-muted);
+}
+
+.fa-fuel-tag {
+  flex: none;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--fa-med-bg);
+  color: var(--fa-med-fg);
+}
+
+/* Estimated sources: the warning colour, and ESTIMASI becomes the biggest
+   piece of text on the card so it cannot be skimmed past. */
+.fa-fuel-banner.is-estimate {
+  border-left-color: var(--fa-danger);
+}
+
+.fa-fuel-banner.is-estimate .fa-fuel-tag {
+  font-size: 1.1rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--fa-high-bg);
+  color: var(--fa-high-fg);
+}
+
+.fa-fuel-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+}
+
+.fa-fuel-hint {
+  flex: 1 1 14rem;
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--fa-muted);
+}
+
+.fa-fuel-panel {
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.fa-fuel-panel-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--fa-muted);
+  margin-bottom: 0.5rem;
+}
+
+/* Chart.js is responsive:true + maintainAspectRatio:false, so the HEIGHT has
+   to come from here or the canvas collapses to nothing. */
+.fa-fuel-chart {
+  position: relative;
+  height: 320px;
+}
+
+.fa-fuel-chart canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* The "no usable data for this chart" fallback swaps the canvas for .fa-empty,
+   which brings its own padding — drop the fixed height so it doesn't sit in a
+   320px void. */
+.fa-fuel-chart:has(.fa-empty) {
+  height: auto;
+}
+
+@media (max-width: 720px) {
+  .fa-fuel-chart {
+    height: 260px;
+  }
+}

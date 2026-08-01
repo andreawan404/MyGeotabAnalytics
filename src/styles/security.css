@@ -1,0 +1,141 @@
+/* Security & Emergency view only. Every colour comes from the dashboard.css
+   custom properties — no new hex, and no rule here restyles a shared class
+   (.fa-kpi-*, .fa-badge*, .fa-table, .fa-empty stay exactly as they are). */
+
+.fa-security {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.fa-sec-panel {
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.fa-sec-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--fa-text);
+}
+
+/* A category the database has no rules for. Greyed so it reads as "not
+   measured" rather than "measured, zero" — the reason sits in .fa-sec-reason. */
+.fa-kpi-card.fa-sec-off {
+  background: var(--fa-bg);
+  border-style: dashed;
+}
+
+.fa-kpi-card.fa-sec-off .fa-kpi-value {
+  color: var(--fa-muted);
+}
+
+.fa-sec-reason {
+  font-size: 0.7rem;
+  color: var(--fa-muted);
+  font-style: italic;
+}
+
+.fa-sec-muted {
+  font-size: 0.75rem;
+  color: var(--fa-muted);
+  margin: 0;
+}
+
+.fa-sec-foot {
+  margin-top: 0.5rem;
+}
+
+/* Wide feed/breach tables scroll inside the panel instead of pushing the whole
+   dashboard sideways in the MyGeotab iframe. */
+.fa-sec-panel .fa-table {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.fa-sec-contacts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.fa-sec-contact {
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.fa-sec-contact-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--fa-text);
+}
+
+.fa-sec-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--fa-muted);
+}
+
+.fa-sec-field input {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--fa-border);
+  border-radius: 6px;
+  background: var(--fa-surface);
+  color: var(--fa-text);
+}
+
+.fa-sec-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+.fa-sec-btn {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.7rem;
+  border-radius: 6px;
+  text-decoration: none;
+  background: var(--fa-accent);
+  color: var(--fa-surface);
+}
+
+/* WhatsApp opens a new tab; the outline treatment marks it as the secondary
+   action without inventing a second brand colour. */
+.fa-sec-btn-wa {
+  background: var(--fa-surface);
+  color: var(--fa-accent);
+  border: 1px solid var(--fa-accent);
+}
+
+/* No valid number: rendered as <span>, so it cannot be clicked at all — the
+   styling only has to make that obvious. */
+.fa-sec-btn-off {
+  background: var(--fa-bg);
+  color: var(--fa-muted);
+  border: 1px solid var(--fa-border);
+  cursor: not-allowed;
+}
+
+@media (max-width: 720px) {
+  .fa-sec-contacts {
+    grid-template-columns: 1fr;
+  }
+}

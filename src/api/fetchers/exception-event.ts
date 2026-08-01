@@ -1,34 +1,40 @@
 import { callApi } from '../geotabClient';
 import { getCached, setCached, buildCacheKey } from '../../utils/cache';
 import type { ExceptionEventDTO } from './types';
-import { parseIsoDurationSec } from './parseDuration';
+import { parseDurationSec } from './parseDuration';
+import { deriveSeverity } from './rule-severity';
+import { fetchRules } from './rule';
+import { groupDeviceSearch } from './search';
 
 const TTL_MS = 5 * 60 * 1000;
+const RESULTS_LIMIT = 50000;
 
-// severity isn't a real MyGeotab field — keyword-match the rule name.
-// Small lookup table, not a scoring engine; tune the lists as real rule
-// names from a live database come in.
-const HIGH_KEYWORDS = ['harsh', 'speeding', 'collision', 'seatbelt'];
-const MEDIUM_KEYWORDS = ['idle', 'idling', 'stop', 'zone'];
+// One warning per unknown rule id, not per event — a single unmapped rule can
+// account for thousands of rows. These warnings are the seed list for
+// SEVERITY_BY_RULE_ID in rule-severity.ts: real ids beat guessed ones.
+const warnedRuleIds = new Set<string>();
 
-function deriveSeverity(ruleName: string): 'low' | 'medium' | 'high' {
-  const n = ruleName.toLowerCase();
-  if (HIGH_KEYWORDS.some((k) => n.includes(k))) return 'high';
-  if (MEDIUM_KEYWORDS.some((k) => n.includes(k))) return 'medium';
-  return 'low';
-}
+// Get ExceptionEvent returns `rule` as a bare {id} — the name only exists on the
+// Rule entity, hence the join.
+function toDTO(raw: any, ruleNameById: Map<string, string>): ExceptionEventDTO {
+  const ruleId = raw.rule?.id ?? '';
+  const ruleName = ruleNameById.get(ruleId) ?? '';
+  const severity = deriveSeverity(ruleId, ruleName);
 
-function toDTO(raw: any): ExceptionEventDTO {
-  const ruleName = raw.rule?.name ?? '';
+  if (severity === 'low' && !warnedRuleIds.has(ruleId)) {
+    warnedRuleIds.add(ruleId);
+    console.warn('unmapped ruleId', ruleId, ruleName);
+  }
+
   return {
     id: raw.id,
     deviceId: raw.device?.id ?? '',
-    ruleId: raw.rule?.id ?? '',
+    ruleId,
     ruleName,
-    severity: deriveSeverity(ruleName),
+    severity,
     start: raw.activeFrom,
     stop: raw.activeTo ?? null,
-    durationSec: parseIsoDurationSec(raw.duration),
+    durationSec: parseDurationSec(raw.duration),
   };
 }
 
@@ -42,16 +48,22 @@ export async function fetchExceptionEvents(params: {
   const cached = await getCached<ExceptionEventDTO[]>(key);
   if (cached) return cached;
 
-  const raw = await callApi<any[]>('Get', {
-    typeName: 'ExceptionEvent',
-    search: {
-      fromDate: params.fromDate,
-      toDate: params.toDate,
-      groupSearch: params.groupId ? [{ id: params.groupId }] : undefined,
-    },
-  });
+  // 30-min cached, so this costs one extra call per session at most.
+  const [raw, rules] = await Promise.all([
+    callApi<any[]>('Get', {
+      typeName: 'ExceptionEvent',
+      search: {
+        fromDate: params.fromDate,
+        toDate: params.toDate,
+        ...groupDeviceSearch(params.groupId),
+      },
+      resultsLimit: RESULTS_LIMIT,
+    }),
+    fetchRules({ database: params.database }),
+  ]);
 
-  const dtos = raw.map(toDTO);
+  const ruleNameById = new Map(rules.map((r) => [r.id, r.name]));
+  const dtos = raw.map((r) => toDTO(r, ruleNameById));
   await setCached(key, dtos, TTL_MS);
   return dtos;
 }

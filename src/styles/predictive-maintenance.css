@@ -1,0 +1,150 @@
+/* Predictive Maintenance view only. Every colour comes from the dashboard.css
+   custom properties — no new hex, and nothing here restyles a shared class
+   (.fa-kpi-*, .fa-table, .fa-empty are owned by dashboard.css). */
+
+.fa-pm-panel {
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.fa-pm-panel[hidden] {
+  display: none;
+}
+
+.fa-pm-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.fa-pm-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.fa-pm-note {
+  font-size: 0.72rem;
+  color: var(--fa-muted);
+  line-height: 1.5;
+}
+
+/* The "we assume services happened on the nominal interval" caveat. Deliberately
+   not muted into invisibility — it is the reason the column is a guess. */
+.fa-pm-caveat {
+  margin: 0.5rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--fa-med-fg);
+  background: var(--fa-med-bg);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+
+.fa-pm-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.fa-pm-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--fa-muted);
+}
+
+.fa-pm-controls input {
+  font: inherit;
+  width: 7rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--fa-border);
+  border-radius: 6px;
+  background: var(--fa-surface);
+  color: var(--fa-text);
+}
+
+/* terukur / heuristik provenance chips. The whole point of this view: if a
+   number is a guess, it says so next to the number, not in a footnote. */
+.fa-pm-chip {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.fa-pm-chip-measured {
+  background: var(--fa-low-bg);
+  color: var(--fa-low-fg);
+}
+
+.fa-pm-chip-heuristic {
+  background: var(--fa-med-bg);
+  color: var(--fa-med-fg);
+}
+
+.fa-pm-th {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: flex-start;
+}
+
+/* Sortable header: a real <button> so it is keyboard reachable, styled back
+   down to look like the plain <th> text around it. */
+.fa-pm-sort {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--fa-muted);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.fa-pm-sort:hover,
+.fa-pm-sort[aria-sort] {
+  color: var(--fa-text);
+}
+
+/* Long fleets scroll the table, never the page body sideways. */
+.fa-pm-scroll {
+  overflow-x: auto;
+}
+
+.fa-pm-flagcount {
+  font-weight: 600;
+}
+
+.fa-pm-flagcount[data-flagged='true'] {
+  color: var(--fa-high-fg);
+}
+
+.fa-pm-muted {
+  color: var(--fa-muted);
+}
+
+/* Chart.js needs an explicitly sized parent: maintainAspectRatio:false means the
+   canvas takes the container's height, and a container with no height collapses. */
+.fa-pm-chart {
+  position: relative;
+  height: 280px;
+}
+
+.fa-pm-chart canvas {
+  width: 100% !important;
+  height: 100% !important;
+}

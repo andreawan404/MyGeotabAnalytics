@@ -1,6 +1,7 @@
 import { callApi } from '../geotabClient';
 import { getCached, setCached, buildCacheKey } from '../../utils/cache';
 import type { LogRecordDTO } from './types';
+import { groupDeviceSearch } from './search';
 
 const TTL_MS = 5 * 60 * 1000;
 const DEFAULT_LIMIT = 1000;
@@ -20,6 +21,7 @@ export async function fetchLogRecords(params: {
   database: string;
   fromDate: string;
   toDate: string;
+  groupId?: string;
   resultsLimit?: number;
 }): Promise<LogRecordDTO[]> {
   if (!params.fromDate || !params.toDate) {
@@ -28,13 +30,13 @@ export async function fetchLogRecords(params: {
   }
 
   const resultsLimit = Math.min(params.resultsLimit || DEFAULT_LIMIT, MAX_LIMIT);
-  const key = buildCacheKey(params.database, 'logrecord', params.fromDate, params.toDate, resultsLimit);
+  const key = buildCacheKey(params.database, 'logrecord', params.fromDate, params.toDate, params.groupId ?? '', resultsLimit);
   const cached = await getCached<LogRecordDTO[]>(key);
   if (cached) return cached;
 
   const raw = await callApi<any[]>('Get', {
     typeName: 'LogRecord',
-    search: { fromDate: params.fromDate, toDate: params.toDate },
+    search: { fromDate: params.fromDate, toDate: params.toDate, ...groupDeviceSearch(params.groupId) },
     resultsLimit,
   });
 
