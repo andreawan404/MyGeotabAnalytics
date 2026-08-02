@@ -154,6 +154,22 @@
   font-weight: 600;
 }
 
+/* Ringkasan naratif di atas tiap halaman: apa angkanya, apa yang perlu
+   ditindak. Sengaja bukan kotak berwarna — ini kalimat yang dibaca, bukan
+   peringatan. Garis kiri menandainya sebagai kesimpulan, bukan data mentah. */
+.fa-summary {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
+  border-left: 3px solid var(--fa-accent);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--fa-text);
+  max-width: 78ch; /* baris panjang melelahkan dibaca */
+}
+
 /* Catatan penjelas — dibedakan dari .fa-empty, yang selama ini merangkap
    empty state, loading, dan caveat sekaligus tanpa beda visual. */
 .fa-note {

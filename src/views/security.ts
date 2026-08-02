@@ -27,6 +27,7 @@ import { onFilterChangeVisible } from './reload-when-visible';
 import { esc, clamp, int } from '../utils/format';
 import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
 import { openGlossary } from '../components/glossary';
+import { summarizeSecurity } from '../analytics/summary';
 import { toUtcRange } from '../utils/date-range';
 import { DEFAULT_WORKING_HOURS } from '../components/kpi-card';
 import {
@@ -222,6 +223,22 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
     const shiftLabel = `${String(hours.startHour).padStart(2, '0')}:00–${String(shiftEnd).padStart(2, '0')}:00`;
 
     container.innerHTML = `
+      <p class="fa-summary">${esc(
+        summarizeSecurity({
+          panic: totals.panic,
+          accident: totals.accident,
+          offHoursTrips: offHoursTrips.length,
+          geofence: totals.geofence,
+          tripCount: trips.length,
+          configured: {
+            panic: ruleCategories.has('panic'),
+            accident: ruleCategories.has('accident'),
+            geofence: ruleCategories.has('geofence') || zones.length > 0,
+          },
+          shiftLabel,
+          shiftHours: hours.hoursPerDay,
+        })
+      )}</p>
       <div class="fa-kpi-row">
         ${kpiCard(
           'sec-panic',

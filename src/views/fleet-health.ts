@@ -16,6 +16,7 @@ import type { ViewCtx } from './registry';
 import { esc, int, one } from '../utils/format';
 import { renderExplainCard, bindExplainToggles } from '../components/kpi-explain';
 import { openGlossary } from '../components/glossary';
+import { summarizeFleetHealth } from '../analytics/summary';
 import {
   activeFaults,
   healthSummary,
@@ -37,6 +38,7 @@ const USAGE_LIMIT = 5000;
 
 export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () => void {
   container.innerHTML = `
+    <p class="fa-summary" data-fh="summary" hidden></p>
     <div class="fa-kpi-row fh-kpi" data-fh="kpi" hidden></div>
     <section class="fh-panel" data-fh="chart" hidden>
       <h2 class="fh-title">Kode Fault Terbanyak</h2>
@@ -47,6 +49,7 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
   `;
 
   const kpiEl = panel('kpi');
+  const summaryEl = panel('summary');
   const chartEl = panel('chart');
   const faultsEl = panel('faults');
   const usageEl = panel('usage');
@@ -88,6 +91,8 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
       if (faults.length === 0) {
         // KPIs stay hidden deliberately: "0 dari 42 unit bermasalah" would read as
         // a clean bill of health when the real answer is "we received nothing".
+        summaryEl.textContent = summarizeFleetHealth(null);
+        summaryEl.hidden = false;
         faultsEl.innerHTML =
           `<p class="fa-empty">Tidak ada data fault engine pada rentang ini — perangkat perlu koneksi ` +
           `<button type="button" class="fa-term-link" data-term="obd">OBD/J1939</button> dan kendaraan yang melaporkan ` +
@@ -124,6 +129,8 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
   // user berhak menolaknya kalau tidak setuju.
   function renderKpis(s: ReturnType<typeof healthSummary>): void {
     kpiEl.hidden = false;
+    summaryEl.textContent = summarizeFleetHealth(s);
+    summaryEl.hidden = false;
     kpiEl.innerHTML = [
       renderExplainCard({
         key: 'fh-affected',

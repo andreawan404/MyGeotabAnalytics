@@ -31,6 +31,7 @@ import { onFilterChangeVisible } from './reload-when-visible';
 import { esc, token, int, two, upto1 } from '../utils/format';
 import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
 import { openGlossary } from '../components/glossary';
+import { summarizeSafety } from '../analytics/summary';
 import type { ViewCtx } from './registry';
 import {
   CATEGORIES,
@@ -143,12 +144,20 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     // pelanggaran" on a database with no rules is worse: it reads as a clean
     // fleet. Now that coverage is known, say which it actually is.
     if (events.length === 0) {
-      const why = noSafetyRules
-        ? 'Belum ada Rule keselamatan (pengereman mendadak, kecepatan, sabuk, dll) di database ini, jadi MyGeotab tidak pernah menghasilkan pelanggaran untuk dihitung. Buat Rule-nya dulu di MyGeotab — halaman ini akan langsung terisi.'
-        : trips.length
-          ? 'Tidak ada pelanggaran pada rentang tanggal ini, padahal Rule keselamatan sudah aktif dan data perjalanan tersedia — jadi memang tidak ada pelanggaran yang terdeteksi.'
-          : 'Tidak ada pelanggaran maupun perjalanan pada rentang tanggal ini. Coba perlebar rentang tanggal atau pilih grup lain.';
-      container.innerHTML = `<p class="fa-empty">${why}</p>`;
+      // Teks penyebabnya sekarang datang dari summarizeSafety(), sumber yang sama
+      // dengan ringkasan di jalur normal — supaya "nol sungguhan" dan "Rule tidak
+      // pernah dibuat" tidak bisa berbunyi beda di dua tempat.
+      container.innerHTML = `<p class="fa-empty">${esc(
+        summarizeSafety({
+          events: 0,
+          totalKm: trips.reduce((n, t) => n + (t.distanceKm || 0), 0),
+          fleetPer100: null,
+          ranked: [],
+          missingCategories: missing.map((c) => CATEGORY_LABELS[c]),
+          anyRuleConfigured: !noSafetyRules,
+          driverAttributionPct: 0,
+        })
+      )}</p>`;
       return;
     }
 
@@ -165,6 +174,17 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
 
     container.innerHTML = `
       <div class="fa-safety">
+        <p class="fa-summary">${esc(
+          summarizeSafety({
+            events: events.length,
+            totalKm,
+            fleetPer100,
+            ranked,
+            missingCategories: missing.map((c) => CATEGORY_LABELS[c]),
+            anyRuleConfigured: !noSafetyRules,
+            driverAttributionPct: attribution * 100,
+          })
+        )}</p>
         <div class="fa-kpi-row">
           ${explainKpi(openPanels, 'sf-total', 'Total Pelanggaran', int(events.length), {
             formula: 'Jumlah seluruh ExceptionEvent pada rentang, dari semua Rule keselamatan yang aktif',

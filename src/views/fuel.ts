@@ -27,6 +27,7 @@ import { onFilterChangeVisible } from './reload-when-visible';
 import { esc, clamp, token, int, one, upto1 } from '../utils/format';
 import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
 import { openGlossary } from '../components/glossary';
+import { summarizeFuel } from '../analytics/summary';
 
 // Dari mana liternya datang. Empat sumber, akurasi jauh berbeda — dan halaman
 // ini tidak boleh terdengar sama yakinnya untuk keempatnya.
@@ -303,6 +304,17 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
 
     setHtml(`
       ${renderBanner(snap, settings)}
+      <p class="fa-summary">${esc(
+        summarizeFuel({
+          source: snap.source,
+          totalL,
+          totalKm,
+          avgLper100: avg,
+          idleWasteL: sumValues(idle),
+          litresPer100Km: settings.litresPer100Km,
+          litresPerIdleHour: settings.litresPerIdleHour,
+        })
+      )}</p>
       <div class="fa-kpi-row">
         ${card('fu-total', 'Total BBM (L)', fmt(totalL), '', {
           formula: SOURCE_FORMULA[snap.source],

@@ -9,6 +9,7 @@ import { defaultDateRange, toUtcRange } from '../utils/date-range';
 import type { TripDTO, ExceptionEventDTO, FilterChangeDetail } from '../api/fetchers/types';
 import { clamp, fin, int, one, durationHm } from '../utils/format';
 import { renderExplainCard, type KpiExplanation } from './kpi-explain';
+import { summarizeOverview } from '../analytics/summary';
 
 export interface KpiTotals {
   utilizationPct: number;
@@ -171,6 +172,13 @@ function renderKpiCard(
 export function initKpiCards(container: HTMLElement, ctx: { database: string; rootEl: HTMLElement }): () => void {
   container.classList.add('fa-kpi-cards');
 
+  // Ringkasan naratif duduk DI LUAR container, karena container ini adalah grid
+  // kartu — sebuah <p> di dalamnya akan jadi sel grid dan merusak barisnya.
+  const summaryEl = document.createElement('p');
+  summaryEl.className = 'fa-summary';
+  summaryEl.hidden = true;
+  container.before(summaryEl);
+
   let working = loadWorkingHours(ctx.database);
   // Which "Bagaimana ini dihitung?" panels are open, kept across re-renders —
   // editing the working-hours inputs must not slam shut the panel that explains
@@ -207,6 +215,18 @@ export function initKpiCards(container: HTMLElement, ctx: { database: string; ro
       working,
       exceptionsBySeverity: kpis.exceptionsBySeverity,
     });
+
+    summaryEl.textContent = summarizeOverview({
+      utilizationPct: kpis.utilizationPct,
+      idleSec: kpis.idleSec,
+      engineHoursApprox: kpis.engineHoursApprox,
+      exceptions: kpis.exceptionsBySeverity,
+      deviceCount: latest.deviceCount,
+      tripCount: latest.trips.length,
+      hoursPerDay: working.hoursPerDay,
+      daysPerWeek: working.daysPerWeek,
+    });
+    summaryEl.hidden = false;
 
     const workingInputs = `
       <div class="fa-kpi-note">
@@ -308,5 +328,6 @@ export function initKpiCards(container: HTMLElement, ctx: { database: string; ro
     ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     container.removeEventListener('click', onContainerClick);
     container.removeEventListener('change', onContainerChange);
+    summaryEl.remove();
   };
 }

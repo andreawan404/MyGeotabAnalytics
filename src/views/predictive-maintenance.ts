@@ -25,6 +25,7 @@ import type { ViewCtx } from './registry';
 import { esc, clamp as clampNumber, int } from '../utils/format';
 import { renderExplainCard, bindExplainToggles } from '../components/kpi-explain';
 import { openGlossary } from '../components/glossary';
+import { summarizePredictive } from '../analytics/summary';
 import {
   latestValuePerDevice,
   chronicFaults,
@@ -126,6 +127,7 @@ interface Column {
 
 export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => void {
   container.innerHTML = `
+    <p class="fa-summary" data-pm="summary" hidden></p>
     <div class="fa-kpi-row" data-pm="kpis"></div>
     <div data-pm="controls"></div>
     <div class="fa-pm-panel" data-pm="chart-panel" hidden>
@@ -141,6 +143,7 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
 
   const pick = <T extends HTMLElement>(name: string) => container.querySelector<T>(`[data-pm="${name}"]`)!;
   const kpisEl = pick('kpis');
+  const summaryEl = pick('summary');
   const controlsEl = pick('controls');
   const chartPanel = pick('chart-panel');
   const canvas = pick<HTMLCanvasElement>('canvas');
@@ -256,6 +259,16 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
     // Geotab's own signal is null far more often than not — an all-null column is
     // noise, so it disappears entirely rather than showing a wall of dashes.
     const hasRisk = rows.some((r) => r.riskOfBreakdown !== undefined);
+
+    summaryEl.textContent = summarizePredictive({
+      rows,
+      chronicSeries: chronic.length,
+      hasOdometer,
+      hasFaults,
+      hasDvir,
+      intervalKm: interval.km,
+    });
+    summaryEl.hidden = false;
 
     renderKpis(rows, chronic.length, hasOdometer, hasFaults, hasDvir);
     renderControls(hasOdometer, hasHours);

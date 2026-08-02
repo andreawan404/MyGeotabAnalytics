@@ -23,6 +23,7 @@ import type { ViewCtx } from './registry';
 import { esc, int, upto1 } from '../utils/format';
 import { renderExplainCard, bindExplainToggles } from '../components/kpi-explain';
 import { openGlossary } from '../components/glossary';
+import { summarizeTripReport } from '../analytics/summary';
 import type { TripDTO, ZoneDTO, DeviceLite, FilterChangeDetail } from '../api/fetchers/types';
 
 const DEFAULT_DWELL_MINUTES = 15;
@@ -194,6 +195,17 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
     const shown = rows.slice(0, MAX_ROWS);
     const roundTrips = rows.filter((r) => r.isRoundTrip).length;
     container.innerHTML = `
+      <p class="fa-summary">${esc(
+        summarizeTripReport({
+          journeys: rows.length,
+          roundTrips,
+          tripCount: trips.length,
+          unmatchedTrips: unmatched.trips,
+          unmatchedKm: unmatched.distanceKm,
+          zoneCount: zones.length,
+          dwellMinutes,
+        })
+      )}</p>
       ${controls()}
       <div class="fa-kpi-row">
         ${renderExplainCard({
