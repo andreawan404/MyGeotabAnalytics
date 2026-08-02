@@ -2,6 +2,7 @@ import assert from 'node:assert';
 import {
   categorize,
   categoryBreakdown,
+  configuredCategories,
   dailyTrend,
   driverAttributionRate,
   eventsPer100Km,
@@ -214,5 +215,52 @@ assert.strictEqual(
 // Trips with no driver identity contribute no rows at all.
 assert.deepStrictEqual(rankDrivers(dEvents, [trip('A', 100)], []), []);
 assert.deepStrictEqual(rankDrivers([], [], []), []);
+
+// --- configuredCategories: which categories this database can measure at all --
+// An ExceptionEvent only exists because a Rule made it, so a category with no
+// Rule can never report anything. Without this the UI shows 0 — the same number
+// a genuinely safe fleet shows.
+{
+  const cov = configuredCategories([
+    { id: 'RuleHarshBrakingId', name: 'Harsh Braking' },
+    { id: 'RuleSpeedingId', name: 'Speeding' },
+  ]);
+  assert.strictEqual(cov['harsh-braking'], true);
+  assert.strictEqual(cov.speeding, true);
+  assert.strictEqual(cov['harsh-cornering'], false, 'no cornering rule -> not measurable');
+  assert.strictEqual(cov.seatbelt, false);
+  assert.strictEqual(cov.other, true, 'other is the catch-all, always available');
+}
+
+// A customer rule with an opaque id must still be detected through its name —
+// the same fallback categorize() uses for events.
+{
+  const cov = configuredCategories([{ id: 'b1A2', name: 'Pengereman Mendadak' }]);
+  assert.strictEqual(cov['harsh-braking'], true, 'Indonesian custom rule detected by name');
+  assert.strictEqual(cov.speeding, false);
+}
+
+// No rules at all: every safety category unmeasurable, `other` still true.
+{
+  const cov = configuredCategories([]);
+  for (const c of CATEGORIES) {
+    assert.strictEqual(cov[c], c === 'other', `empty rule list -> ${c} should be ${c === 'other'}`);
+  }
+}
+
+// Coverage MUST agree with how events are bucketed: whatever categorize() says a
+// rule is, that category has to come back true. If these two ever diverged, a
+// card could claim a rule exists while its events land in another bucket.
+{
+  const rules = [
+    { id: 'RuleHarshCorneringId', name: '' },
+    { id: 'b1A5', name: 'Idle Berlebihan' },
+    { id: 'b9Z9', name: 'Masuk Zona Gudang' }, // -> other
+  ];
+  const cov = configuredCategories(rules);
+  for (const r of rules) {
+    assert.strictEqual(cov[categorize(r.id, r.name)], true, `categorize/coverage disagree for ${r.id}`);
+  }
+}
 
 console.log('safety.check.ts: PASS');

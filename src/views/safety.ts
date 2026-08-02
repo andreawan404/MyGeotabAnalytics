@@ -14,7 +14,15 @@ import { fetchExceptionEvents } from '../api/fetchers/exception-event';
 import { fetchTrips } from '../api/fetchers/trip';
 import { fetchDevices } from '../api/fetchers/device';
 import { fetchDrivers } from '../api/fetchers/driver';
-import type { ExceptionEventDTO, TripDTO, DeviceLite, DriverLite, FilterChangeDetail } from '../api/fetchers/types';
+import { fetchRules } from '../api/fetchers/rule';
+import type {
+  ExceptionEventDTO,
+  TripDTO,
+  DeviceLite,
+  DriverLite,
+  RuleDTO,
+  FilterChangeDetail,
+} from '../api/fetchers/types';
 import { toUtcRange } from '../utils/date-range';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
@@ -23,12 +31,14 @@ import {
   CATEGORIES,
   CATEGORY_LABELS,
   categoryBreakdown,
+  configuredCategories,
   dailyTrend,
   driverAttributionRate,
   eventsPer100Km,
   rankDevices,
   rankDrivers,
   topCategoryByDevice,
+  type Category,
 } from '../analytics/safety';
 
 Chart.register(...registerables);
@@ -71,7 +81,7 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     try {
       const { fromIso, toIso } = toUtcRange(filter.dateFrom, filter.dateTo);
       const groupId = filter.groupId;
-      const [events, trips, devices, drivers] = await Promise.all([
+      const [events, trips, devices, drivers, rules] = await Promise.all([
         fetchExceptionEvents({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
         fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
         fetchDevices({ database: ctx.database, groupId, fromDate: fromIso, toDate: toIso }),
@@ -80,10 +90,18 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
           console.warn('safety: fetchDrivers failed, continuing without names', err);
           return [] as DriverLite[];
         }),
+        // Which categories this database can measure at all. Cached 30 min and
+        // already fetched by exception-event.ts, so this is effectively free.
+        // Failing to know coverage must not blank the view — fall back to "no
+        // rules known", which only ever makes the UI more cautious.
+        fetchRules({ database: ctx.database }).catch((err) => {
+          console.warn('safety: fetchRules failed, coverage unknown', err);
+          return [] as RuleDTO[];
+        }),
       ]);
 
       if (seq !== loadSeq) return; // a newer load won
-      render(events, trips, devices, drivers, fromIso, toIso);
+      render(events, trips, devices, drivers, rules, fromIso, toIso);
     } catch (err) {
       if (seq !== loadSeq) return;
       console.error('safety: load failed', err);
@@ -97,14 +115,25 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     trips: TripDTO[],
     devices: DeviceLite[],
     drivers: DriverLite[],
+    rules: RuleDTO[],
     fromIso: string,
     toIso: string
   ): void {
-    // Degrade with a REASON. An empty chart looks like a broken chart.
+    const configured = configuredCategories(rules);
+    // `other` is the catch-all, so it never proves a safety rule exists.
+    const safetyCats = CATEGORIES.filter((c) => c !== 'other');
+    const missing = safetyCats.filter((c) => !configured[c]);
+    const noSafetyRules = missing.length === safetyCats.length;
+
+    // Degrade with a REASON. An empty chart looks like a broken chart — and "0
+    // pelanggaran" on a database with no rules is worse: it reads as a clean
+    // fleet. Now that coverage is known, say which it actually is.
     if (events.length === 0) {
-      const why = trips.length
-        ? 'Tidak ada pelanggaran (exception event) pada rentang tanggal ini. Data perjalanan tersedia, jadi kemungkinan besar memang tidak ada pelanggaran — atau belum ada Rule keselamatan yang aktif di database ini.'
-        : 'Tidak ada pelanggaran maupun perjalanan pada rentang tanggal ini. Coba perlebar rentang tanggal atau pilih grup lain.';
+      const why = noSafetyRules
+        ? 'Belum ada Rule keselamatan (pengereman mendadak, kecepatan, sabuk, dll) di database ini, jadi MyGeotab tidak pernah menghasilkan pelanggaran untuk dihitung. Buat Rule-nya dulu di MyGeotab — halaman ini akan langsung terisi.'
+        : trips.length
+          ? 'Tidak ada pelanggaran pada rentang tanggal ini, padahal Rule keselamatan sudah aktif dan data perjalanan tersedia — jadi memang tidak ada pelanggaran yang terdeteksi.'
+          : 'Tidak ada pelanggaran maupun perjalanan pada rentang tanggal ini. Coba perlebar rentang tanggal atau pilih grup lain.';
       container.innerHTML = `<p class="fa-empty">${why}</p>`;
       return;
     }
@@ -124,9 +153,20 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
         <div class="fa-kpi-row">
           ${kpi('Total Pelanggaran', nf0.format(events.length))}
           ${kpi('Pelanggaran / 100 km (armada)', fleetPer100 === null ? '—' : nf2.format(fleetPer100))}
-          ${kpi('Pengereman Mendadak', nf0.format(breakdown['harsh-braking']))}
-          ${kpi('Kecepatan Berlebih', nf0.format(breakdown.speeding))}
+          ${categoryKpi('harsh-braking', breakdown, configured)}
+          ${categoryKpi('speeding', breakdown, configured)}
         </div>
+
+        ${
+          missing.length
+            ? `<p class="fa-safety-caveat fa-safety-missing">
+                 <span class="fa-safety-flag">tidak diukur</span>
+                 Kategori berikut <strong>belum punya Rule</strong> di database ini, jadi tidak pernah bisa muncul —
+                 angkanya sengaja dikosongkan, bukan nol:
+                 <strong>${missing.map((c) => esc(CATEGORY_LABELS[c])).join(', ')}</strong>.
+               </p>`
+            : ''
+        }
 
         <div>
           <p class="fa-safety-caveat">
@@ -134,6 +174,12 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
             ExceptionEvent dari MyGeotab <strong>tidak memuat besaran pelanggaran</strong> — misalnya berapa km/jam
             kelebihan kecepatannya, atau seberapa keras pengeremannya. Yang tersedia hanya durasi kejadian. Jadi setiap
             pelanggaran dihitung sama beratnya di halaman ini; durasi tidak dipakai sebagai bobot keparahan.
+          </p>
+          <p class="fa-safety-caveat">
+            Semua angka di sini berasal dari <strong>Rule</strong> yang aktif di database ini beserta
+            <strong>ambang batasnya</strong> (misal pengereman mendadak dipicu pada −0,4G). Ambang itu disetel di
+            MyGeotab dan bisa diubah kapan saja, jadi angka ini sah untuk membandingkan unit
+            <strong>di dalam database yang sama</strong> — bukan untuk dibandingkan dengan armada atau klien lain.
           </p>
           <p class="fa-safety-caveat">
             Peringkat memakai <strong>pelanggaran per 100 km</strong>, bukan jumlah mentah. Jumlah mentah selalu
@@ -297,12 +343,25 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
   };
 }
 
-function kpi(label: string, value: string): string {
+function kpi(label: string, value: string, note = ''): string {
   return `
     <div class="fa-kpi-card">
       <div class="fa-kpi-label">${label}</div>
       <div class="fa-kpi-value">${value}</div>
+      ${note ? `<div class="fa-kpi-note">${note}</div>` : ''}
     </div>`;
+}
+
+/** A category with no Rule shows "—", never 0: zero is a measurement, and none
+ *  was taken. Same distinction the fleet-health view makes for absent data. */
+function categoryKpi(
+  cat: Category,
+  breakdown: Record<Category, number>,
+  configured: Record<Category, boolean>
+): string {
+  return configured[cat]
+    ? kpi(esc(CATEGORY_LABELS[cat]), nf0.format(breakdown[cat]))
+    : kpi(esc(CATEGORY_LABELS[cat]), '—', 'Rule belum dikonfigurasi di database ini');
 }
 
 function deviceTable(

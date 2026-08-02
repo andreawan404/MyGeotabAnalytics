@@ -201,12 +201,17 @@ export const rawDeviceStatusInfo = [
 // name exists. Built-in ids are Geotab's stable, non-localized system ids; the
 // two lowercase ids are customer-defined rules, whose names an Indonesian
 // database returns in Indonesian.
+// No seatbelt rule on purpose — plenty of vehicles never report seatbelt status,
+// so this is a realistic gap AND it is what makes dev mode render the "Rule belum
+// dikonfigurasi" branch. A fixture where everything is configured only ever
+// exercises the happy path, and the whole point of the coverage check is that a
+// missing rule must not look like zero violations. Same reasoning as omitting
+// DiagnosticOdometerId from the StatusData rows below.
 export const rawRules = [
   { id: 'RuleHarshBrakingId', name: 'Pengereman Mendadak' },
   { id: 'RuleHarshAccelerationId', name: 'Akselerasi Mendadak' },
   { id: 'RuleHarshCorneringId', name: 'Menikung Tajam' },
   { id: 'RuleSpeedingId', name: 'Melebihi Batas Kecepatan' },
-  { id: 'RuleSeatbeltId', name: 'Sabuk Pengaman Tidak Dipakai' },
   { id: 'RuleIdlingId', name: 'Mesin Menyala Terlalu Lama' },
   { id: 'b1A2', name: 'Masuk Zona Terlarang' },
   { id: 'c3D4', name: 'Perawatan Terjadwal' },

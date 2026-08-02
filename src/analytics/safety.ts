@@ -76,6 +76,27 @@ export function categorize(ruleId: string, ruleName: string): Category {
   return 'other';
 }
 
+/**
+ * Which categories this database can actually measure.
+ *
+ * An ExceptionEvent only exists because a Rule produced it, so a category with
+ * no Rule can never report anything. Without this, "Pengereman Mendadak: 0" is
+ * indistinguishable from "nobody is measuring harsh braking" — the same number
+ * for a safe fleet and an unmonitored one.
+ *
+ * Deliberately runs the SAME categorize() used to bucket the events. If coverage
+ * were computed any other way the two could disagree, and a card could claim a
+ * rule exists while its events land somewhere else entirely.
+ *
+ * `other` is always true: it is the catch-all bucket, not one specific rule.
+ */
+export function configuredCategories(rules: { id: string; name: string }[]): Record<Category, boolean> {
+  const out = Object.fromEntries(CATEGORIES.map((c) => [c, false])) as Record<Category, boolean>;
+  out.other = true;
+  for (const r of rules) out[categorize(r.id, r.name)] = true;
+  return out;
+}
+
 export interface DeviceRate {
   deviceId: string;
   events: number;
