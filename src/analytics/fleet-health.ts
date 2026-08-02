@@ -138,6 +138,63 @@ function isAfter(a: string, b: string): boolean {
   return ta > tb;
 }
 
+export interface DeviceFaultDetail {
+  diagnosticId: string;
+  name: string;
+  state: 'active' | 'pending';
+  dateTime: string;
+  count: number;
+  criticalLamp: boolean;
+  controllerName: string | null;
+}
+
+/**
+ * Per-device breakdown for the expandable row: which faults are actually open on
+ * this vehicle. Active first (that is the work), then newest first — a mechanic
+ * reads top-down and should hit the confirmed, most recent problem immediately.
+ *
+ * Dismissed rows never appear: they were explicitly triaged away, and showing
+ * them again would undo that decision on every render.
+ */
+export function faultsForDevices(
+  faults: FaultDataDTO[],
+  diagnostics: DiagnosticDTO[]
+): Record<string, DeviceFaultDetail[]> {
+  const nameById = new Map(diagnostics.map((d) => [d.id, d.name]));
+  const out: Record<string, DeviceFaultDetail[]> = {};
+
+  for (const f of faults) {
+    if (!undismissed(f)) continue;
+    const state = ACTIVE_STATE.test(f.faultState)
+      ? 'active'
+      : PENDING_STATE.test(f.faultState)
+        ? 'pending'
+        : null;
+    if (state === null) continue;
+
+    (out[f.deviceId] ??= []).push({
+      diagnosticId: f.diagnosticId,
+      // Unresolvable ids stay visible as the raw id — an unknown code is a
+      // finding, not something to blank out.
+      name: nameById.get(f.diagnosticId) ?? f.diagnosticId,
+      state,
+      dateTime: f.dateTime,
+      count: f.count > 0 ? f.count : 1,
+      criticalLamp: isCriticalLamp(f.faultLampState),
+      controllerName: f.controllerName,
+    });
+  }
+
+  for (const list of Object.values(out)) {
+    list.sort(
+      (a, b) =>
+        (a.state === b.state ? 0 : a.state === 'active' ? -1 : 1) ||
+        (isAfter(b.dateTime, a.dateTime) ? 1 : isAfter(a.dateTime, b.dateTime) ? -1 : 0)
+    );
+  }
+  return out;
+}
+
 export interface HealthSummary {
   devicesWithActiveFaults: number;
   totalDevices: number;

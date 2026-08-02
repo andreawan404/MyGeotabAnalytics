@@ -2,7 +2,6 @@
 // All the impure work lives here: fetching, Chart.js, DOM. The math is in
 // ../analytics/fleet-health.ts and stays pure so its .check.ts runs under tsx.
 
-import { Chart, registerables } from 'chart.js';
 import '../styles/fleet-health.css';
 import { fetchFaultData } from '../api/fetchers/fault-data';
 import { fetchDiagnostics } from '../api/fetchers/diagnostic';
@@ -19,10 +18,10 @@ import {
   healthSummary,
   rankVehiclesByFault,
   topFaultCodes,
+  faultsForDevices,
   type FaultCodeTally,
+  type DeviceFaultDetail,
 } from '../analytics/fleet-health';
-
-Chart.register(...registerables);
 
 /** Rows shown in the two tables. Beyond this nobody scrolls; the point is a
  *  worklist, not an export. */
@@ -49,7 +48,6 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
   const faultsEl = panel('faults');
   const usageEl = panel('usage');
 
-  let chart: Chart | null = null;
   let latestTop: FaultCodeTally[] = [];
   // Every async continuation checks this: a filter change (or teardown) while a
   // fetch is in flight must not let the stale response paint over the new one.
@@ -89,9 +87,10 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
         renderKpis(healthSummary(faults, devices));
         latestTop = topFaultCodes(faults, diagnostics, 10);
         renderChart();
-        // The worklist is built from ACTIVE faults only — a red lamp that already
-        // cleared is history, not a job for the workshop.
-        renderFaultTable(rankVehiclesByFault(active, devices));
+        // The worklist is ranked on ACTIVE faults only — a red lamp that already
+        // cleared is history, not a job for the workshop. The expandable detail
+        // then shows Active AND Pending so a mechanic sees what to watch too.
+        renderFaultTable(rankVehiclesByFault(active, devices), faultsForDevices(faults, diagnostics));
       }
     } catch (err) {
       console.error('fleet-health: load failed', err);
@@ -129,55 +128,61 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
   }
 
   function hideChart(): void {
-    chart?.destroy();
-    chart = null;
     latestTop = [];
     chartEl.hidden = true;
   }
 
+  /**
+   * HTML bars, not a canvas. Geotab fault names run long ("Telematics device
+   * fault: internal reset initiated…") and a Chart.js category axis truncates
+   * them to an ellipsis, which is precisely the label a user needs to read.
+   * Real text wraps, is selectable, is reachable by a screen reader, and needs
+   * no width guard or resize handling — so this panel also stops depending on
+   * the 0x0-inside-a-hidden-view dance the canvas required.
+   *
+   * Counts are printed as text next to every bar rather than living in a
+   * tooltip: hover-only values are unreadable on touch and to assistive tech.
+   */
   function renderChart(): void {
-    chart?.destroy();
-    chart = null;
     if (latestTop.length === 0) {
       chartEl.hidden = true;
       return;
     }
     chartEl.hidden = false;
 
-    // A chart constructed inside a hidden view measures 0x0 and stays that way.
-    // Leave the panel populated-but-chartless; `dashboard:view-shown` builds it
-    // the moment this view actually has a width. (Same trap that bit the heat map.)
-    if (container.clientWidth <= 0) return;
-
+    const max = Math.max(...latestTop.map((t) => t.occurrences), 1);
     const box = chartEl.querySelector<HTMLElement>('.fh-chart-box')!;
-    box.innerHTML = '<canvas></canvas>';
 
-    chart = new Chart(box.querySelector('canvas')!, {
-      type: 'bar',
-      data: {
-        labels: latestTop.map((t) => truncate(t.name, 44)),
-        datasets: [{ label: 'Kejadian', data: latestTop.map((t) => t.occurrences), backgroundColor: cssVar('--fa-accent', '#3b82f6') }],
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: { x: { beginAtZero: true, title: { display: true, text: 'Jumlah kejadian' } } },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              // Spread matters as much as volume: 400 hits on one truck is a
-              // different problem from 400 spread over the fleet.
-              afterLabel: (item) => `${latestTop[item.dataIndex]?.deviceCount ?? 0} unit terdampak`,
-            },
-          },
-        },
-      },
-    });
+    box.innerHTML = `
+      <ol class="fh-bars">
+        ${latestTop
+          .map((t, i) => {
+            const pct = Math.max((t.occurrences / max) * 100, 2); // never a zero-width sliver
+            return `
+              <li class="fh-bar-row">
+                <span class="fh-bar-rank" aria-hidden="true">${i + 1}</span>
+                <div class="fh-bar-main">
+                  <div class="fh-bar-head">
+                    <span class="fh-bar-name">${esc(t.name)}</span>
+                    <span class="fh-bar-count"><strong>${t.occurrences.toLocaleString('id-ID')}</strong> kejadian</span>
+                  </div>
+                  <div class="fh-bar-track">
+                    <div class="fh-bar-fill${i === 0 ? ' is-top' : ''}" style="width:${pct.toFixed(1)}%"></div>
+                  </div>
+                  <div class="fh-bar-meta">${t.deviceCount.toLocaleString('id-ID')} unit terdampak</div>
+                </div>
+              </li>`;
+          })
+          .join('')}
+      </ol>
+      <p class="fh-note">Diurutkan dari kejadian terbanyak. "Unit terdampak" memisahkan satu unit yang melapor berkali-kali dari masalah yang menyebar ke banyak unit.</p>
+    `;
   }
 
-  function renderFaultTable(rows: ReturnType<typeof rankVehiclesByFault>): void {
+  function renderFaultTable(
+    rows: ReturnType<typeof rankVehiclesByFault>,
+    detailByDevice: Record<string, DeviceFaultDetail[]>
+  ): void {
     if (rows.length === 0) {
       faultsEl.innerHTML = '<p class="fa-empty">Ada data fault pada rentang ini, tapi tidak ada yang masih aktif — semua sudah selesai atau sudah di-dismiss.</p>';
       return;
@@ -185,23 +190,68 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
     const shown = rows.slice(0, TABLE_ROWS);
     faultsEl.innerHTML = `
       <h2 class="fh-title">Unit Perlu Perhatian</h2>
-      <table class="fa-table">
-        <thead><tr><th>Unit</th><th>Lampu Kritis</th><th>Fault Aktif</th><th>Terakhir</th></tr></thead>
+      <table class="fa-table fh-table">
+        <thead><tr><th></th><th>Unit</th><th>Lampu Kritis</th><th>Fault Aktif</th><th>Terakhir</th></tr></thead>
         <tbody>
-          ${shown
-            .map(
-              (r) => `<tr>
-                <td>${esc(r.deviceName)}</td>
-                <td>${r.criticalLamps > 0 ? `<span class="fh-critical">${r.criticalLamps}</span>` : '0'}</td>
-                <td>${r.activeCount}</td>
-                <td>${esc(formatDateTime(r.lastFaultAt))}</td>
-              </tr>`
-            )
-            .join('')}
+          ${shown.map((r, i) => faultRow(r, detailByDevice[r.deviceId] ?? [], i)).join('')}
         </tbody>
       </table>
       ${rows.length > shown.length ? `<p class="fh-note">Menampilkan ${shown.length} dari ${rows.length} unit bermasalah.</p>` : ''}
     `;
+  }
+
+  function faultRow(
+    r: ReturnType<typeof rankVehiclesByFault>[number],
+    details: DeviceFaultDetail[],
+    i: number
+  ): string {
+    const id = `fh-detail-${i}`;
+    // A real <button> with aria-expanded/aria-controls: the row must open by
+    // keyboard and be announced as a disclosure, not just react to a click.
+    return `
+      <tr class="fh-row">
+        <td class="fh-toggle-cell">
+          <button type="button" class="fh-toggle" aria-expanded="false" aria-controls="${id}"
+                  aria-label="Lihat daftar fault ${esc(r.deviceName)}" data-target="${id}">
+            <span class="fh-chevron" aria-hidden="true"></span>
+          </button>
+        </td>
+        <td>${esc(r.deviceName)}</td>
+        <td>${r.criticalLamps > 0 ? `<span class="fh-critical">${r.criticalLamps}</span>` : '0'}</td>
+        <td>${r.activeCount}</td>
+        <td>${esc(formatDateTime(r.lastFaultAt))}</td>
+      </tr>
+      <tr class="fh-detail-row" id="${id}" hidden>
+        <td colspan="5">${detailList(details)}</td>
+      </tr>`;
+  }
+
+  function detailList(details: DeviceFaultDetail[]): string {
+    if (details.length === 0) {
+      return '<p class="fh-detail-empty">Tidak ada fault terbuka pada unit ini di rentang yang dipilih.</p>';
+    }
+    return `
+      <ul class="fh-detail-list">
+        ${details
+          .map(
+            (d) => `
+              <li class="fh-detail-item">
+                <span class="fh-chip fh-chip-${d.state}">${d.state === 'active' ? 'AKTIF' : 'PANTAU'}</span>
+                <div class="fh-detail-main">
+                  <div class="fh-detail-name">
+                    ${esc(d.name)}
+                    ${d.criticalLamp ? '<span class="fh-chip fh-chip-lamp">LAMPU KRITIS</span>' : ''}
+                  </div>
+                  <div class="fh-detail-meta">
+                    ${esc(formatDateTime(d.dateTime))}
+                    · ${d.count.toLocaleString('id-ID')}× kejadian
+                    ${d.controllerName ? `· ${esc(d.controllerName)}` : ''}
+                  </div>
+                </div>
+              </li>`
+          )
+          .join('')}
+      </ul>`;
   }
 
   async function loadUsage(
@@ -309,25 +359,29 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
     `;
   }
 
-  // `dashboard:view-shown` is broadcast on the shared rootEl for EVERY view —
-  // including the ones that just hid us — so the width guard is what makes it
-  // safe, not the event itself.
-  function onShown(): void {
-    if (container.clientWidth <= 0) return;
-    if (chart) chart.resize();
-    else if (latestTop.length > 0) renderChart();
+  // One delegated listener on the container, not one per row: the table is
+  // re-rendered on every filter change, and per-row handlers would have to be
+  // re-attached (and leaked) each time.
+  function onToggle(e: Event): void {
+    const btn = (e.target as HTMLElement | null)?.closest<HTMLButtonElement>('.fh-toggle');
+    if (!btn) return;
+    const row = document.getElementById(btn.dataset.target ?? '');
+    if (!row) return;
+    const open = btn.getAttribute('aria-expanded') === 'true';
+    btn.setAttribute('aria-expanded', String(!open));
+    row.hidden = open;
   }
 
-  ctx.rootEl.addEventListener('dashboard:view-shown', onShown);
+  container.addEventListener('click', onToggle);
   const stopFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   void load(getCurrentFilter());
 
+  // No `dashboard:view-shown` listener any more: this view has no canvas left,
+  // and HTML bars need no re-measure when the view becomes visible.
   return () => {
     runId++; // in-flight loads become stale and will not touch the DOM
-    ctx.rootEl.removeEventListener('dashboard:view-shown', onShown);
+    container.removeEventListener('click', onToggle);
     stopFilter();
-    chart?.destroy();
-    chart = null;
   };
 }
 

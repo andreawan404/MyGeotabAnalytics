@@ -6,6 +6,7 @@ import {
   topFaultCodes,
   rankVehiclesByFault,
   healthSummary,
+  faultsForDevices,
 } from './fleet-health';
 import type { FaultDataDTO, DiagnosticDTO, DeviceLite } from '../api/fetchers/types';
 
@@ -203,6 +204,51 @@ assert.strictEqual(summary.pendingCount, 0, 'no Pending rows in this fixture');
 {
   const s = healthSummary([fault({ faultState: 'Active' })], devices);
   assert.strictEqual(s.resolvedCount, 0);
+}
+
+// --- faultsForDevices: what the expandable row shows -------------------------
+{
+  const rows = [
+    fault({ deviceId: 'b1', diagnosticId: 'DiagX', faultState: 'Active', dateTime: '2026-07-30T08:00:00.000Z' }),
+    fault({ deviceId: 'b1', diagnosticId: 'DiagY', faultState: 'Active', dateTime: '2026-07-31T09:00:00.000Z', faultLampState: 'RedStopLamp' }),
+    fault({ deviceId: 'b1', diagnosticId: 'DiagZ', faultState: 'Pending', dateTime: '2026-08-01T10:00:00.000Z' }),
+    fault({ deviceId: 'b1', faultState: 'Inactive' }), // cleared -> not shown
+    fault({ deviceId: 'b1', faultState: 'Active', dismissDateTime: '2026-08-01T00:00:00.000Z' }), // triaged away
+    fault({ deviceId: 'b2', diagnosticId: 'DiagX', faultState: 'Pending' }),
+  ];
+  const byDevice = faultsForDevices(rows, diagnostics);
+
+  assert.strictEqual(byDevice['b1'].length, 3, 'Inactive and dismissed rows are excluded');
+  assert.deepStrictEqual(
+    byDevice['b1'].map((d) => d.state),
+    ['active', 'active', 'pending'],
+    'active first, pending last — the work comes before the watchlist'
+  );
+  assert.strictEqual(
+    byDevice['b1'][0].diagnosticId,
+    'DiagY',
+    'within active, newest first'
+  );
+  assert.strictEqual(byDevice['b1'][0].name, 'Brake Circuit Pressure', 'name resolved from the catalogue');
+  assert.strictEqual(byDevice['b1'][0].criticalLamp, true);
+  assert.strictEqual(byDevice['b1'][2].criticalLamp, false);
+
+  // An unknown diagnostic stays visible as its raw id rather than a blank line.
+  const unknownDiag = faultsForDevices([fault({ deviceId: 'b9', diagnosticId: 'DiagUnknown' })], diagnostics);
+  assert.strictEqual(unknownDiag['b9'][0].name, 'DiagUnknown');
+
+  // count 0 is a row that still happened at least once.
+  const zero = faultsForDevices([fault({ deviceId: 'b9', count: 0 })], diagnostics);
+  assert.strictEqual(zero['b9'][0].count, 1);
+
+  // A device whose only faults are cleared/dismissed gets no entry at all.
+  const noneOpen = faultsForDevices(
+    [fault({ deviceId: 'b3', faultState: 'Inactive' }), fault({ deviceId: 'b3', faultState: 'None' })],
+    diagnostics
+  );
+  assert.strictEqual(noneOpen['b3'], undefined);
+
+  assert.deepStrictEqual(faultsForDevices([], diagnostics), {}, 'empty input -> empty map');
 }
 
 console.log('fleet-health.check.ts: PASS');
