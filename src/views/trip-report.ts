@@ -20,18 +20,12 @@ import { toUtcRange } from '../utils/date-range';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
 import type { ViewCtx } from './registry';
+import { esc, int, upto1 } from '../utils/format';
 import type { TripDTO, ZoneDTO, DeviceLite, FilterChangeDetail } from '../api/fetchers/types';
 
 const DEFAULT_DWELL_MINUTES = 15;
 const STORAGE_PREFIX = 'fleet-analytics:trip-report-dwell:';
 const MAX_ROWS = 200; // a worklist, not an export
-
-const nf0 = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 });
-const nf1 = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 });
-
-function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-}
 
 function loadDwell(database: string): number {
   try {
@@ -159,9 +153,9 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
           <div class="tr-when">${esc(formatWhen(r.arriveAt))}</div>
         </td>
         <td class="tr-num">${esc(formatDur(r.durationSec))}</td>
-        <td class="tr-num">${nf1.format(r.distanceKm)}</td>
-        ${anyFuel ? `<td class="tr-num">${r.fuelL === null ? '<span class="tr-na">—</span>' : nf1.format(r.fuelL)}</td>` : ''}
-        <td class="tr-num">${nf0.format(r.stops)}</td>
+        <td class="tr-num">${upto1(r.distanceKm)}</td>
+        ${anyFuel ? `<td class="tr-num">${r.fuelL === null ? '<span class="tr-na">—</span>' : upto1(r.fuelL)}</td>` : ''}
+        <td class="tr-num">${int(r.stops)}</td>
       </tr>`;
   }
 
@@ -187,8 +181,8 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
     if (rows.length === 0) {
       container.innerHTML = `
         ${controls()}
-        <p class="fa-empty">Ada ${nf0.format(trips.length)} perjalanan pada rentang ini, tapi tidak ada yang berawal DAN berakhir di zona terdaftar
-        (total ${nf1.format(unmatched.distanceKm)} km). Tambahkan geofence di lokasi yang sering dikunjungi agar muncul di sini.</p>`;
+        <p class="fa-empty">Ada ${int(trips.length)} perjalanan pada rentang ini, tapi tidak ada yang berawal DAN berakhir di zona terdaftar
+        (total ${upto1(unmatched.distanceKm)} km). Tambahkan geofence di lokasi yang sering dikunjungi agar muncul di sini.</p>`;
       return;
     }
 
@@ -206,10 +200,10 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
           <tbody>${shown.map((r) => row(r, anyFuel)).join('')}</tbody>
         </table>
       </div>
-      ${rows.length > shown.length ? `<p class="tr-note">Menampilkan ${nf0.format(shown.length)} dari ${nf0.format(rows.length)} perjalanan.</p>` : ''}
+      ${rows.length > shown.length ? `<p class="tr-note">Menampilkan ${int(shown.length)} dari ${int(rows.length)} perjalanan.</p>` : ''}
       ${
         unmatched.trips > 0
-          ? `<p class="tr-note">${nf0.format(unmatched.trips)} perjalanan lain berakhir di luar zona terdaftar (total ${nf1.format(unmatched.distanceKm)} km) — tidak muncul di tabel ini.</p>`
+          ? `<p class="tr-note">${int(unmatched.trips)} perjalanan lain berakhir di luar zona terdaftar (total ${upto1(unmatched.distanceKm)} km) — tidak muncul di tabel ini.</p>`
           : ''
       }
       ${
@@ -234,12 +228,22 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
     render();
   }
 
+
+  // Profil Operasi menulis knob ini ke localStorage lalu menyiarkan event ini.
+  // Baca ulang dan render dari data yang sudah ada — tidak ada fetch baru.
+  const onProfileChange = (): void => {
+    dwellMinutes = loadDwell(ctx.database);
+    render();
+  };
+  ctx.rootEl.addEventListener('dashboard:profile-change', onProfileChange);
+
   container.addEventListener('change', onInput);
   const stopFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   void load(getCurrentFilter());
 
   return () => {
     seq++; // in-flight loads become stale and will not paint
+    ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     container.removeEventListener('change', onInput);
     stopFilter();
   };

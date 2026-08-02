@@ -1,0 +1,149 @@
+/* Glosarium. <dialog> native: backdrop, Esc, focus trap dan pengembalian fokus
+   datang dari browser — tidak ada JS modal di sini yang perlu di-styling. */
+
+.fa-glossary-btn {
+  font: inherit;
+  font-weight: 700;
+  line-height: 1;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  border: 1px solid var(--fa-border);
+  background: var(--fa-surface);
+  color: var(--fa-muted);
+  cursor: pointer;
+}
+
+.fa-glossary-btn:hover,
+.fa-glossary-btn:focus-visible {
+  color: var(--fa-accent);
+  border-color: var(--fa-accent);
+}
+
+.fa-glossary {
+  width: min(46rem, 92vw);
+  max-height: 85vh;
+  padding: 0;
+  border: 1px solid var(--fa-border);
+  border-radius: 10px;
+  background: var(--fa-surface);
+  color: var(--fa-text);
+  font-family: inherit;
+  overflow: hidden;
+}
+
+.fa-glossary::backdrop {
+  background: rgb(15 23 42 / 0.45);
+}
+
+.fa-glossary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--fa-border);
+  position: sticky;
+  top: 0;
+  background: var(--fa-surface);
+}
+
+.fa-glossary-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.fa-glossary-close {
+  font: inherit;
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0 0.4rem;
+  border: 0;
+  background: none;
+  color: var(--fa-muted);
+  cursor: pointer;
+}
+
+.fa-glossary-body {
+  padding: 0 1.25rem 1.25rem;
+  max-height: calc(85vh - 3.5rem);
+  overflow-y: auto;
+}
+
+.fa-glossary-body h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fa-muted);
+}
+
+.fa-glossary-list {
+  margin: 0;
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.fa-term {
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid var(--fa-border);
+  scroll-margin-top: 4rem;
+}
+
+.fa-term:last-child {
+  border-bottom: 0;
+}
+
+.fa-term dt {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.fa-term dd {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--fa-text);
+}
+
+.fa-term-aka {
+  font-weight: 400;
+  font-size: 0.8rem;
+  color: var(--fa-muted);
+}
+
+.fa-term-where {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--fa-muted);
+}
+
+/* Deep-link dari kolom yang membingungkan: sorot istilah yang dituju.
+   Garis kiri, bukan warna saja — sorotan harus terbaca tanpa persepsi warna. */
+.fa-term-hit {
+  background: var(--fa-low-bg);
+  box-shadow: inset 3px 0 0 var(--fa-low-fg);
+}
+
+/* Tombol istilah yang ditanam di dalam view (mis. header kolom). Terlihat
+   seperti teks bergaris bawah putus-putus, bukan tombol — tidak mengganggu
+   pemindaian tabel tapi jelas bisa ditekan. */
+.fa-term-link {
+  font: inherit;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.fa-term-link:hover,
+.fa-term-link:focus-visible {
+  color: var(--fa-accent);
+}

@@ -13,6 +13,7 @@ import { toUtcRange } from '../utils/date-range';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
 import type { ViewCtx } from './registry';
+import { esc } from '../utils/format';
 import {
   activeFaults,
   healthSummary,
@@ -410,21 +411,3 @@ function formatDateTime(iso: string): string {
   return new Date(t).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-function truncate(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
-
-/** Chart.js needs a concrete color string, so read the shared palette instead of
- *  hardcoding a second blue next to dashboard.css's. */
-function cssVar(name: string, fallback: string): string {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || fallback;
-}
-
-const ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
-
-/** Device and diagnostic names are customer-entered free text landing in
- *  innerHTML. ponytail: 4 lines beats a DOM-building refactor of every table. */
-function esc(text: string): string {
-  return text.replace(/[&<>"]/g, (c) => ESCAPES[c]);
-}

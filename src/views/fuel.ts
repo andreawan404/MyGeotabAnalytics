@@ -24,6 +24,7 @@ import { probeDiagnostics, WELL_KNOWN_DIAGNOSTICS } from '../api/fetchers/probe'
 import { toUtcRange } from '../utils/date-range';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
+import { esc, clamp, token, int, one, upto1 } from '../utils/format';
 import type { ViewCtx } from './registry';
 import type {
   FilterChangeDetail,
@@ -89,10 +90,6 @@ function saveSettings(database: string, s: Settings): void {
   } catch {
     /* storage unavailable — the setting just won't persist */
   }
-}
-
-function clamp(n: number, min: number, max: number, fallback: number): number {
-  return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
 }
 
 /** Everything one load() produced, kept so changing a RATE re-renders without
@@ -415,12 +412,22 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
   };
   ctx.rootEl.addEventListener('dashboard:view-shown', onShown);
 
+
+  // Profil Operasi menulis knob ini ke localStorage lalu menyiarkan event ini.
+  // Baca ulang dan render dari data yang sudah ada — tidak ada fetch baru.
+  const onProfileChange = (): void => {
+    settings = loadSettings(ctx.database);
+    render();
+  };
+  ctx.rootEl.addEventListener('dashboard:profile-change', onProfileChange);
+
   const stopFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   void load(getCurrentFilter());
 
   return () => {
     loadToken++; // an in-flight load must not render into a dead container
     stopFilter();
+    ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     ctx.rootEl.removeEventListener('dashboard:view-shown', onShown);
     destroyCharts();
   };
@@ -605,15 +612,8 @@ function fmt(n: number, digits = 1): string {
   return n.toLocaleString('id-ID', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-/** Device names come from the database — they are not ours to trust in HTML. */
-function esc(s: string): string {
-  const el = document.createElement('span');
-  el.textContent = s;
-  return el.innerHTML;
-}
-
 /** Chart.js needs a real color, so read the shared token instead of inventing
  *  a second blue next to dashboard.css. */
 function accent(): string {
-  return getComputedStyle(document.documentElement).getPropertyValue('--fa-accent').trim() || '#3b82f6';
+  return token('--fa-accent', '#3b82f6');
 }

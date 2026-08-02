@@ -42,10 +42,13 @@ const addin = createAddin({
     filterBarContainer: {} as any,
     sideMenuContainer: {} as any,
     viewContainer: {} as any,
+    toolsContainer: {} as any,
   }),
   initFilterBar: () => fakeCleanup,
   initSideMenu: () => fakeCleanup,
   initViewHost: () => fakeCleanup,
+  initOperatingProfile: () => fakeCleanup,
+  initGlossary: () => fakeCleanup,
 });
 
 let callbackCalled = false;
@@ -55,10 +58,10 @@ addin.initialize({} as any, { database: 'testdb' }, () => {
 assert.strictEqual(callbackCalled, true, 'expected callback() to be invoked synchronously by initialize()');
 
 addin.blur();
-assert.strictEqual(cleanupCalls, 3, 'expected all 3 cleanup functions to be called exactly once');
+assert.strictEqual(cleanupCalls, 5, 'expected all 5 cleanup functions to be called exactly once');
 
 addin.blur();
-assert.strictEqual(cleanupCalls, 3, 'expected a second blur() call to not re-invoke cleanups');
+assert.strictEqual(cleanupCalls, 5, 'expected a second blur() call to not re-invoke cleanups');
 
 // The spinner in MyGeotab only clears when callback() runs, so a throwing
 // component must NOT prevent it â€” the whole reason the add-in hung before.
@@ -72,6 +75,7 @@ const throwingAddin = createAddin({
     filterBarContainer: {} as any,
     sideMenuContainer: {} as any,
     viewContainer: {} as any,
+    toolsContainer: {} as any,
   }),
   initFilterBar: () => () => {
     survivorCleanups++;
@@ -82,6 +86,12 @@ const throwingAddin = createAddin({
   initViewHost: () => () => {
     survivorCleanups++;
   },
+  initOperatingProfile: () => () => {
+    survivorCleanups++;
+  },
+  initGlossary: () => () => {
+    survivorCleanups++;
+  },
 });
 throwingAddin.initialize({} as any, { database: 'testdb' }, () => {
   cbAfterThrow = true;
@@ -90,7 +100,7 @@ assert.strictEqual(cbAfterThrow, true, 'expected callback() to still run when a 
 
 // The surviving 2 components must still be wired and cleanable.
 throwingAddin.blur();
-assert.strictEqual(survivorCleanups, 2, 'expected the 2 non-throwing components to still register cleanups');
+assert.strictEqual(survivorCleanups, 4, 'expected the 4 non-throwing components to still register cleanups');
 
 // A failure inside initialize() itself (before components) must also reach callback().
 let cbAfterFatal = false;
@@ -102,6 +112,8 @@ const fatalAddin = createAddin({
   renderShell: () => ({}) as any,
   initFilterBar: () => () => {},
   initSideMenu: () => () => {},
+  initOperatingProfile: () => () => {},
+  initGlossary: () => () => {},
   initViewHost: () => () => {},
 });
 fatalAddin.initialize({} as any, { database: 'testdb' }, () => {

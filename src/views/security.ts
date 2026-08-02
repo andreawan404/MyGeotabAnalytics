@@ -24,6 +24,7 @@ import { fetchTrips } from '../api/fetchers/trip';
 import { fetchRules } from '../api/fetchers/rule';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
+import { esc, clamp } from '../utils/format';
 import { toUtcRange } from '../utils/date-range';
 import { DEFAULT_WORKING_HOURS } from '../components/kpi-card';
 import {
@@ -98,12 +99,6 @@ const CATEGORY_LABEL: Record<FeedCategory, string> = {
 
 const SEVERITY_LABEL = { low: 'Rendah', medium: 'Sedang', high: 'Tinggi' } as const;
 
-// Rule names, device names and phone overrides are customer-controlled strings
-// going into innerHTML. Escape at the boundary, not case by case.
-function esc(value: string): string {
-  return value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}
-
 function readJson<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -119,10 +114,6 @@ function writeJson(key: string, value: unknown): void {
   } catch {
     /* storage unavailable — the override just won't persist */
   }
-}
-
-function clamp(n: number, min: number, max: number, fallback: number): number {
-  return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
 }
 
 function formatTime(iso: string): string {
@@ -445,6 +436,15 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
     }
   }
 
+
+  // Profil Operasi menulis knob ini ke localStorage lalu menyiarkan event ini.
+  // Baca ulang dan render dari data yang sudah ada — tidak ada fetch baru.
+  const onProfileChange = (): void => {
+    hours = normalizeHours(readJson<SecurityHours>(HOURS_KEY + ctx.database, defaultHours()));
+    render();
+  };
+  ctx.rootEl.addEventListener('dashboard:profile-change', onProfileChange);
+
   container.addEventListener('change', onChange);
   const offFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   load(getCurrentFilter());
@@ -452,6 +452,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
   return () => {
     loadSeq++; // any in-flight load must not paint after cleanup
     offFilter();
+    ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     container.removeEventListener('change', onChange);
     container.innerHTML = ''; // discards every rendered input with its node
   };

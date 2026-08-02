@@ -10,6 +10,8 @@ import { renderShell } from './components/shell';
 import { initFilterBar } from './components/filter-bar';
 import { initSideMenu } from './components/side-menu';
 import { initViewHost } from './components/view-host';
+import { initOperatingProfile } from './components/operating-profile';
+import { initGlossary } from './components/glossary';
 
 export interface GeotabAddinState {
   database: string;
@@ -26,6 +28,8 @@ export interface AddinDeps {
   initFilterBar: typeof initFilterBar;
   initSideMenu: typeof initSideMenu;
   initViewHost: typeof initViewHost;
+  initOperatingProfile: typeof initOperatingProfile;
+  initGlossary: typeof initGlossary;
 }
 
 const defaultDeps: AddinDeps = {
@@ -45,6 +49,8 @@ const defaultDeps: AddinDeps = {
   initFilterBar,
   initSideMenu,
   initViewHost,
+  initOperatingProfile,
+  initGlossary,
 };
 
 /** Set by initialize(); read by the diagnostic timer at the bottom of this file. */
@@ -74,6 +80,8 @@ export function createAddin(deps: AddinDeps = defaultDeps) {
         // filter-bar FIRST: it publishes the current filter that views read at mount.
         for (const [name, init, container] of [
           ['filter-bar', deps.initFilterBar, shell.filterBarContainer],
+          ['operating-profile', deps.initOperatingProfile, shell.toolsContainer],
+          ['glossary', deps.initGlossary, shell.toolsContainer],
           ['side-menu', deps.initSideMenu, shell.sideMenuContainer],
           ['view-host', deps.initViewHost, shell.viewContainer],
         ] as [string, (c: HTMLElement, x: typeof ctx) => Cleanup, HTMLElement][]) {

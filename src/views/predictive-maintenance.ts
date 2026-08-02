@@ -22,6 +22,7 @@ import { toUtcRange } from '../utils/date-range';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
 import type { ViewCtx } from './registry';
+import { esc, clamp as clampNumber, int } from '../utils/format';
 import {
   latestValuePerDevice,
   chronicFaults,
@@ -62,10 +63,6 @@ interface Loaded {
 
 // --- persistence -----------------------------------------------------------
 
-function clampNumber(n: number, min: number, max: number, fallback: number): number {
-  return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
-}
-
 function loadInterval(database: string): ServiceInterval {
   try {
     const raw = localStorage.getItem(STORAGE_PREFIX + database);
@@ -90,13 +87,8 @@ function saveInterval(database: string, interval: ServiceInterval): void {
 
 // --- formatting ------------------------------------------------------------
 
-/** Device names are database content, and this view builds innerHTML. */
-function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-}
-
 function num(n: number): string {
-  return Math.round(n).toLocaleString('id-ID');
+  return int(Math.round(n));
 }
 
 function chip(kind: 'terukur' | 'heuristik'): string {
@@ -538,6 +530,15 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
     if (container.clientWidth > 0) chart?.resize();
   }
 
+
+  // Profil Operasi menulis knob ini ke localStorage lalu menyiarkan event ini.
+  // Baca ulang dan render dari data yang sudah ada — tidak ada fetch baru.
+  const onProfileChange = () => {
+    interval = loadInterval(ctx.database);
+    render();
+  };
+  ctx.rootEl.addEventListener('dashboard:profile-change', onProfileChange);
+
   const offFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   ctx.rootEl.addEventListener('dashboard:view-shown', onViewShown);
   load(getCurrentFilter());
@@ -545,6 +546,7 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
   return () => {
     disposed = true;
     offFilter();
+    ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     ctx.rootEl.removeEventListener('dashboard:view-shown', onViewShown);
     chart?.destroy();
     chart = null;

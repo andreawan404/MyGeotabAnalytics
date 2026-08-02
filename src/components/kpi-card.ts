@@ -7,6 +7,7 @@ import { fetchExceptionEvents } from '../api/fetchers/exception-event';
 import { fetchDevices } from '../api/fetchers/device';
 import { defaultDateRange, toUtcRange } from '../utils/date-range';
 import type { TripDTO, ExceptionEventDTO, FilterChangeDetail } from '../api/fetchers/types';
+import { esc, clamp, fin, int, one, durationHm } from '../utils/format';
 
 export interface KpiTotals {
   utilizationPct: number;
@@ -81,17 +82,6 @@ export interface KpiExplainInput {
   exceptionsBySeverity: { low: number; medium: number; high: number };
 }
 
-const nfInt = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 });
-const nf1 = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-
-/** Empty fleet / zero-length range must never print "NaN" or "∞" at a customer. */
-function fin(n: number): number {
-  return Number.isFinite(n) ? n : 0;
-}
-
-const int = (n: number) => nfInt.format(fin(n));
-const one = (n: number) => nf1.format(fin(n));
-
 export function explainKpis(input: KpiExplainInput): Record<KpiExplainKey, KpiExplanation> {
   const drivingSec = fin(input.drivingSec);
   const idleSec = fin(input.idleSec);
@@ -120,7 +110,7 @@ export function explainKpis(input: KpiExplainInput): Record<KpiExplainKey, KpiEx
     },
     idle: {
       formula: 'Σ Trip.idlingDuration',
-      substituted: `${int(idleSec)} dtk idle = ${formatDuration(idleSec)}`,
+      substituted: `${int(idleSec)} dtk idle = ${durationHm(idleSec)}`,
       source: 'Trip.idlingDuration (MyGeotab), dijumlahkan apa adanya tanpa asumsi apa pun.',
       kind: 'terukur',
     },
@@ -147,10 +137,6 @@ export function explainKpis(input: KpiExplainInput): Record<KpiExplainKey, KpiEx
 
 const STORAGE_PREFIX = 'fleet-analytics:working-hours:';
 
-function clamp(n: number, min: number, max: number, fallback: number): number {
-  return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
-}
-
 function loadWorkingHours(database: string): WorkingHours {
   try {
     const raw = localStorage.getItem(STORAGE_PREFIX + database);
@@ -171,21 +157,6 @@ function saveWorkingHours(database: string, working: WorkingHours): void {
   } catch {
     /* storage unavailable — the setting just won't persist */
   }
-}
-
-function formatDuration(totalSec: number): string {
-  const h = Math.floor(fin(totalSec) / 3600);
-  const m = Math.floor((fin(totalSec) % 3600) / 60);
-  return `${h}j ${m}m`;
-}
-
-const ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
-
-/** Rule and device names are customer free text; the explanation strings are
- *  ours, but escaping at the innerHTML boundary is cheaper than auditing which
- *  is which later. Mirrors src/views/fleet-health.ts. */
-function esc(text: string): string {
-  return text.replace(/[&<>"]/g, (c) => ESCAPES[c]);
 }
 
 const KIND_LABEL: Record<KpiKind, string> = {
@@ -294,7 +265,7 @@ export function initKpiCards(container: HTMLElement, ctx: { database: string; ro
       renderKpiCard(
         'idle',
         'Total Waktu Idle',
-        formatDuration(kpis.idleSec),
+        durationHm(kpis.idleSec),
         'Penjumlahan Trip.idlingDuration dari MyGeotab',
         exp.idle,
         openPanels.has('idle')
@@ -355,14 +326,24 @@ export function initKpiCards(container: HTMLElement, ctx: { database: string; ro
     load(detail.dateFrom, detail.dateTo, detail.groupId);
   }
 
+
+  // Profil Operasi menulis knob ini ke localStorage lalu menyiarkan event ini.
+  // Baca ulang dan render dari data yang sudah ada — tidak ada fetch baru.
+  function onProfileChange() {
+    working = loadWorkingHours(ctx.database);
+    render();
+  }
+
   const initial = defaultDateRange();
   load(initial.dateFrom, initial.dateTo);
   ctx.rootEl.addEventListener('dashboard:filter-change', onFilterChange);
+  ctx.rootEl.addEventListener('dashboard:profile-change', onProfileChange);
   container.addEventListener('click', onContainerClick);
   container.addEventListener('change', onContainerChange);
 
   return () => {
     ctx.rootEl.removeEventListener('dashboard:filter-change', onFilterChange);
+    ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     container.removeEventListener('click', onContainerClick);
     container.removeEventListener('change', onContainerChange);
   };

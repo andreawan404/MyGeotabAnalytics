@@ -28,6 +28,7 @@ import type {
 import { toUtcRange } from '../utils/date-range';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
+import { esc, token, int, two, upto1 } from '../utils/format';
 import type { ViewCtx } from './registry';
 import {
   CATEGORIES,
@@ -50,21 +51,20 @@ Chart.register(...registerables);
 /** Below this, a per-driver ranking is fiction — see the note it renders instead. */
 const ATTRIBUTION_GATE = 0.5;
 
-const nf0 = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 });
-const nf1 = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 });
-const nf2 = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-}
-
 /** Chart colors are read from the dashboard.css palette rather than re-invented,
  *  so a theme change moves the charts too. */
+const PALETTE_TOKENS: Array<[string, string]> = [
+  ['--fa-high-fg', '#b91c1c'],
+  ['--fa-med-fg', '#b45309'],
+  ['--fa-accent', '#3b82f6'],
+  ['--fa-low-fg', '#1d4ed8'],
+  ['--fa-danger', '#b91c1c'],
+  ['--fa-muted', '#6b7280'],
+  ['--fa-border', '#e2e5e9'],
+];
+
 function palette(): string[] {
-  const s = getComputedStyle(document.documentElement);
-  return ['--fa-high-fg', '--fa-med-fg', '--fa-accent', '--fa-low-fg', '--fa-danger', '--fa-muted', '--fa-border']
-    .map((v) => s.getPropertyValue(v).trim())
-    .map((c, i) => c || ['#b91c1c', '#b45309', '#3b82f6', '#1d4ed8', '#b91c1c', '#6b7280', '#e2e5e9'][i]);
+  return PALETTE_TOKENS.map(([name, fallback]) => token(name, fallback));
 }
 
 export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void {
@@ -164,8 +164,8 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     container.innerHTML = `
       <div class="fa-safety">
         <div class="fa-kpi-row">
-          ${kpi('Total Pelanggaran', nf0.format(events.length))}
-          ${kpi('Pelanggaran / 100 km (armada)', fleetPer100 === null ? '—' : nf2.format(fleetPer100))}
+          ${kpi('Total Pelanggaran', int(events.length))}
+          ${kpi('Pelanggaran / 100 km (armada)', fleetPer100 === null ? '—' : two(fleetPer100))}
           ${categoryKpi('harsh-braking', breakdown, configured)}
           ${categoryKpi('speeding', breakdown, configured)}
         </div>
@@ -289,7 +289,7 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     attribution: number
   ): string {
     if (attribution < ATTRIBUTION_GATE) {
-      const pct = nf0.format(attribution * 100);
+      const pct = int(attribution * 100);
       // The honest reason matters more than the number: on most Indonesian fleets
       // there is no NFC/iButton reader at all, so every trip is UnknownDriverId.
       // A leaderboard built on that is one row holding the whole fleet.
@@ -306,7 +306,7 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     const rows = rankDrivers(events, trips, drivers);
     if (rows.length === 0) return '<p class="fa-empty">Tidak ada pelanggaran yang bisa dikaitkan ke pengemudi pada rentang ini.</p>';
 
-    const pct = nf0.format(attribution * 100);
+    const pct = int(attribution * 100);
     return `
       <p class="fa-safety-caveat">${pct}% trip punya identitas pengemudi. Pelanggaran dikaitkan ke pengemudi lewat trip yang sedang berjalan saat kejadian.</p>
       <div class="fa-safety-tablewrap">
@@ -321,9 +321,9 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
                 (r, i) => `
               <tr class="${i < 3 ? 'fa-safety-worst' : ''}">
                 <td>${esc(r.name)}</td>
-                <td class="fa-safety-num">${nf0.format(r.events)}</td>
-                <td class="fa-safety-num">${nf1.format(r.km)}</td>
-                <td class="fa-safety-num">${r.per100Km === null ? '<span class="fa-safety-na">—</span>' : nf2.format(r.per100Km)}</td>
+                <td class="fa-safety-num">${int(r.events)}</td>
+                <td class="fa-safety-num">${upto1(r.km)}</td>
+                <td class="fa-safety-num">${r.per100Km === null ? '<span class="fa-safety-na">—</span>' : two(r.per100Km)}</td>
               </tr>`
               )
               .join('')}
@@ -387,7 +387,7 @@ function categoryKpi(
   configured: Record<Category, boolean>
 ): string {
   return configured[cat]
-    ? kpi(esc(CATEGORY_LABELS[cat]), nf0.format(breakdown[cat]))
+    ? kpi(esc(CATEGORY_LABELS[cat]), int(breakdown[cat]))
     : kpi(esc(CATEGORY_LABELS[cat]), '—', 'Rule belum dikonfigurasi di database ini');
 }
 
@@ -399,7 +399,7 @@ function thresholdText(
 ): string {
   const op = /less|below/i.test(t.conditionType) ? '<' : /more|above|greater/i.test(t.conditionType) ? '>' : '=';
   const what = t.diagnosticId ? diagnosticNames.get(t.diagnosticId) ?? t.diagnosticId : '';
-  return `${what ? `${esc(what)} ` : ''}${op} ${nf2.format(t.value)}`;
+  return `${what ? `${esc(what)} ` : ''}${op} ${two(t.value)}`;
 }
 
 function violationList(rows: ViolationBreakdown[], diagnosticNames: Map<string, string>): string {
@@ -412,7 +412,7 @@ function violationList(rows: ViolationBreakdown[], diagnosticNames: Map<string, 
         .map(
           (v) => `
         <li class="fa-safety-detail-item">
-          <span class="fa-safety-count">${nf0.format(v.count)}×</span>
+          <span class="fa-safety-count">${int(v.count)}×</span>
           <div class="fa-safety-detail-main">
             <div class="fa-safety-detail-name">
               ${esc(v.ruleName)}
@@ -487,12 +487,12 @@ function deviceTable(
               </button>
             </td>
             <td>${esc(r.name)}</td>
-            <td class="fa-safety-num">${nf0.format(r.events)}</td>
-            <td class="fa-safety-num">${nf1.format(r.km)}</td>
+            <td class="fa-safety-num">${int(r.events)}</td>
+            <td class="fa-safety-num">${upto1(r.km)}</td>
             <td class="fa-safety-num">${
               // 0 km means the rate is UNKNOWN, not zero. Showing "—" beats
               // showing Infinity, NaN, or a fake 0 that flatters a parked unit.
-              r.per100Km === null ? '<span class="fa-safety-na">—</span>' : nf2.format(r.per100Km)
+              r.per100Km === null ? '<span class="fa-safety-na">—</span>' : two(r.per100Km)
             }</td>
             <td>${cat ? CATEGORY_LABELS[cat] : '<span class="fa-safety-na">—</span>'}</td>
           </tr>

@@ -11,6 +11,9 @@ export interface DashboardShell {
   filterBarContainer: HTMLElement;
   sideMenuContainer: HTMLElement;
   viewContainer: HTMLElement;
+  /** Slot chrome di header: pemilih Profil Operasi + tombol glosarium. Bukan
+   *  filter — isinya setelan yang berlaku untuk seluruh dashboard. */
+  toolsContainer: HTMLElement;
 }
 
 export function renderShell(root: HTMLElement, ctx: { database: string }): DashboardShell {
@@ -19,6 +22,7 @@ export function renderShell(root: HTMLElement, ctx: { database: string }): Dashb
     <header class="fa-header">
       <h1>Fleet Analytics</h1>
       <span class="fa-database"></span>
+      <div class="fa-header-tools" id="fa-tools"></div>
     </header>
     <div class="fa-layout">
       <nav class="fa-sidemenu" id="fa-menu"></nav>
@@ -37,5 +41,6 @@ export function renderShell(root: HTMLElement, ctx: { database: string }): Dashb
     filterBarContainer: root.querySelector('#fa-filter')!,
     sideMenuContainer: root.querySelector('#fa-menu')!,
     viewContainer: root.querySelector('#fa-views')!,
+    toolsContainer: root.querySelector('#fa-tools')!,
   };
 }
