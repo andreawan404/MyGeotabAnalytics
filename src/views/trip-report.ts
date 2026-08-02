@@ -22,7 +22,6 @@ import { onFilterChangeVisible } from './reload-when-visible';
 import type { ViewCtx } from './registry';
 import { esc, int, upto1 } from '../utils/format';
 import { renderExplainCard, bindExplainToggles } from '../components/kpi-explain';
-import { openGlossary } from '../components/glossary';
 import { summarizeTripReport } from '../analytics/summary';
 import type { TripDTO, ZoneDTO, DeviceLite, FilterChangeDetail } from '../api/fetchers/types';
 
@@ -111,7 +110,7 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
 
   async function load(filter: FilterChangeDetail): Promise<void> {
     const run = ++seq;
-    container.innerHTML = '<p class="fa-empty">Memuat laporan perjalanan…</p>';
+    container.innerHTML = '<p class="fa-loading">Memuat laporan perjalanan…</p>';
     const { fromIso, toIso } = toUtcRange(filter.dateFrom, filter.dateTo);
     const groupId = filter.groupId;
 
@@ -142,7 +141,8 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
         <label class="tr-field">Ambang berhenti (menit)
           <input type="number" id="tr-dwell" min="1" max="720" step="5" value="${dwellMinutes}">
         </label>
-        <span class="tr-hint">Berhenti lebih singkat dari ini dianggap masih satu perjalanan — mis. mampir isi BBM tidak memecah perjalanan jadi dua.</span>
+        <span class="tr-hint">Berhenti lebih singkat dari ini dianggap masih satu perjalanan — mis. mampir isi BBM tidak memecah perjalanan jadi dua.
+          Tabel dihitung ulang setelah Anda keluar dari kolom ini (klik di luar atau tekan Tab), bukan saat mengetik.</span>
       </div>`;
   }
 
@@ -278,12 +278,6 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
   };
   ctx.rootEl.addEventListener('dashboard:profile-change', onProfileChange);
 
-  const onTermClick = (e: Event): void => {
-    const term = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-term]')?.dataset.term;
-    if (term) openGlossary(term);
-  };
-  container.addEventListener('click', onTermClick);
-
   container.addEventListener('change', onInput);
   const stopFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   void load(getCurrentFilter());
@@ -292,7 +286,6 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
     seq++; // in-flight loads become stale and will not paint
     ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     container.removeEventListener('change', onInput);
-    container.removeEventListener('click', onTermClick);
     stopExplain();
     stopFilter();
   };

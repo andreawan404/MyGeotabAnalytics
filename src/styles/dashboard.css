@@ -433,7 +433,56 @@
 }
 
 .fa-heatmap {
-  height: 400px;
+  height: 480px; /* judul + legenda + catatan di atas peta 400px */
+  display: flex;
+  flex-direction: column;
+}
+
+.fa-heat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.fa-heat-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+/* Legenda gradien. Warnanya HARUS sama dengan gradien leaflet.heat, kalau tidak
+   legendanya justru menyesatkan lebih parah daripada tidak ada legenda. */
+.fa-heat-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--fa-muted);
+}
+
+.fa-heat-scale {
+  display: inline-block;
+  width: 7rem;
+  height: 0.55rem;
+  border-radius: 3px;
+  border: 1px solid var(--fa-border);
+}
+
+.fa-heat-note {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--fa-muted);
+  max-width: 78ch;
+}
+
+.fa-heat-map {
+  flex: 1;
+  min-height: 0;
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .fa-timeline {

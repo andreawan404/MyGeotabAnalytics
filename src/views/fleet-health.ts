@@ -15,7 +15,6 @@ import { onFilterChangeVisible } from './reload-when-visible';
 import type { ViewCtx } from './registry';
 import { esc, int, one } from '../utils/format';
 import { renderExplainCard, bindExplainToggles } from '../components/kpi-explain';
-import { openGlossary } from '../components/glossary';
 import { summarizeFleetHealth } from '../analytics/summary';
 import {
   activeFaults,
@@ -71,7 +70,7 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
     const run = ++runId;
     const { fromIso, toIso } = toUtcRange(filter.dateFrom, filter.dateTo);
 
-    faultsEl.innerHTML = '<p class="fa-empty">Memuat data kesehatan armada…</p>';
+    faultsEl.innerHTML = '<p class="fa-loading">Memuat data kesehatan armada…</p>';
     usageEl.innerHTML = '';
     hideChart();
     kpiEl.hidden = true;
@@ -460,14 +459,8 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
     row.hidden = open;
   }
 
-  // Istilah yang tidak bisa ditebak dari namanya dibuat bisa diklik ke glosarium.
-  function onTermClick(e: Event): void {
-    const term = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-term]')?.dataset.term;
-    if (term) openGlossary(term);
-  }
 
   container.addEventListener('click', onToggle);
-  container.addEventListener('click', onTermClick);
   const stopFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   void load(getCurrentFilter());
 
@@ -476,7 +469,6 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
   return () => {
     runId++; // in-flight loads become stale and will not touch the DOM
     container.removeEventListener('click', onToggle);
-    container.removeEventListener('click', onTermClick);
     stopExplain();
     stopFilter();
   };

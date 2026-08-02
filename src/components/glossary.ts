@@ -39,7 +39,7 @@ function renderTerm(t: Term): string {
     </div>`;
 }
 
-export function initGlossary(container: HTMLElement, _ctx: { database: string; rootEl: HTMLElement }): () => void {
+export function initGlossary(container: HTMLElement, ctx: { database: string; rootEl: HTMLElement }): () => void {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'fa-glossary-btn';
@@ -77,12 +77,24 @@ export function initGlossary(container: HTMLElement, _ctx: { database: string; r
     if (e.target === dialog) dialog.close();
   };
 
+  // SATU listener terdelegasi di root untuk seluruh dashboard: apa pun yang
+  // membawa data-term membuka glosarium di istilah itu, di view mana pun.
+  // Alternatifnya adalah satu handler identik di tiap view — tujuh salinan yang
+  // harus diingat saat menambah view kedelapan, dan satu-satunya alasan chip
+  // keyakinan bisa diklik di semua kartu sekaligus.
+  const onTermClick = (e: Event) => {
+    const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-term]');
+    if (el?.dataset.term) openGlossary(el.dataset.term);
+  };
+
   btn.addEventListener('click', onBtn);
   dialog.addEventListener('click', onDialogClick);
+  ctx.rootEl.addEventListener('click', onTermClick);
 
   return () => {
     btn.removeEventListener('click', onBtn);
     dialog.removeEventListener('click', onDialogClick);
+    ctx.rootEl.removeEventListener('click', onTermClick);
     if (dialogEl === dialog) dialogEl = null;
     btn.remove();
     dialog.remove();

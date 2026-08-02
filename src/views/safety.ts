@@ -30,7 +30,6 @@ import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
 import { esc, token, int, two, upto1 } from '../utils/format';
 import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
-import { openGlossary } from '../components/glossary';
 import { summarizeSafety } from '../analytics/summary';
 import type { ViewCtx } from './registry';
 import {
@@ -83,7 +82,7 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
   async function load(filter: FilterChangeDetail): Promise<void> {
     const seq = ++loadSeq;
     destroyCharts();
-    container.innerHTML = '<p class="fa-empty">Memuat data keselamatan…</p>';
+    container.innerHTML = '<p class="fa-loading">Memuat data keselamatan…</p>';
 
     try {
       const { fromIso, toIso } = toUtcRange(filter.dateFrom, filter.dateTo);
@@ -259,6 +258,12 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
 
         <section class="fa-safety-section">
           <h2>Peringkat Unit — terburuk ke terbaik</h2>
+          <p class="fa-note">
+            Tiga baris teratas disorot: itulah unit dengan pelanggaran per 100 km tertinggi,
+            dan tempat coaching paling masuk akal dimulai. Klik tanda panah untuk melihat
+            aturan mana yang terpicu di tiap unit. Unit tanpa jarak tempuh tampil
+            &ldquo;&mdash;&rdquo; dan turun ke bawah &mdash; lajunya tidak diketahui, bukan nol.
+          </p>
           <div class="fa-safety-tablewrap">${deviceTable(ranked, topCat, violations, diagnosticNames)}</div>
         </section>
 
@@ -355,6 +360,7 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     const pct = int(attribution * 100);
     return `
       <p class="fa-safety-caveat">${pct}% trip punya identitas pengemudi. Pelanggaran dikaitkan ke pengemudi lewat trip yang sedang berjalan saat kejadian.</p>
+      <p class="fa-note">Tiga baris teratas disorot: pelanggaran per 100 km tertinggi.</p>
       <div class="fa-safety-tablewrap">
         <table class="fa-table">
           <thead><tr>
@@ -381,12 +387,6 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
 
   // Panel penjelasan yang terbuka bertahan melewati render ulang.
   const { open: openPanels, stop: stopExplain } = bindExplainToggles(container);
-
-  const onTermClick = (e: Event): void => {
-    const term = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-term]')?.dataset.term;
-    if (term) openGlossary(term);
-  };
-  container.addEventListener('click', onTermClick);
 
   // Initial paint + refetch when the filter changes (only while this view is the
   // visible one — reload-when-visible.ts keeps six views off the rate limit).
@@ -420,7 +420,6 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     loadSeq++; // in-flight responses land after unmount; make them no-ops
     ctx.rootEl.removeEventListener('dashboard:view-shown', onShown);
     container.removeEventListener('click', onToggle);
-    container.removeEventListener('click', onTermClick);
     stopExplain();
     unsubscribeFilter();
     destroyCharts();

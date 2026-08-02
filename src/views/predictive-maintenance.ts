@@ -24,7 +24,6 @@ import { onFilterChangeVisible } from './reload-when-visible';
 import type { ViewCtx } from './registry';
 import { esc, clamp as clampNumber, int } from '../utils/format';
 import { renderExplainCard, bindExplainToggles } from '../components/kpi-explain';
-import { openGlossary } from '../components/glossary';
 import { summarizePredictive } from '../analytics/summary';
 import {
   latestValuePerDevice,
@@ -162,7 +161,7 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
   let disposed = false;
 
   async function load(filter: FilterChangeDetail) {
-    kpisEl.innerHTML = '<p class="fa-empty">Memuat data prediktif&hellip;</p>';
+    kpisEl.innerHTML = '<p class="fa-loading">Memuat data prediktif&hellip;</p>';
     try {
       const { toIso } = toUtcRange(filter.dateFrom, filter.dateTo);
       const toMs = Date.parse(toIso);
@@ -625,12 +624,6 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
   };
   ctx.rootEl.addEventListener('dashboard:profile-change', onProfileChange);
 
-  // Judul kolom yang tidak bisa ditebak dari namanya membuka glosarium.
-  const onTermClick = (e: Event): void => {
-    const term = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-term]')?.dataset.term;
-    if (term) openGlossary(term);
-  };
-  container.addEventListener('click', onTermClick);
 
   const offFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   ctx.rootEl.addEventListener('dashboard:view-shown', onViewShown);
@@ -641,7 +634,6 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
     offFilter();
     ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     ctx.rootEl.removeEventListener('dashboard:view-shown', onViewShown);
-    container.removeEventListener('click', onTermClick);
     stopExplain();
     chart?.destroy();
     chart = null;

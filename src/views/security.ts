@@ -26,7 +26,6 @@ import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
 import { esc, clamp, int } from '../utils/format';
 import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
-import { openGlossary } from '../components/glossary';
 import { summarizeSecurity } from '../analytics/summary';
 import { toUtcRange } from '../utils/date-range';
 import { DEFAULT_WORKING_HOURS } from '../components/kpi-card';
@@ -151,7 +150,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
 
   async function load(filter: FilterChangeDetail): Promise<void> {
     const seq = ++loadSeq;
-    container.innerHTML = '<p class="fa-empty">Memuat data keamanan…</p>';
+    container.innerHTML = '<p class="fa-loading">Memuat data keamanan…</p>';
     try {
       const { fromIso, toIso } = toUtcRange(filter.dateFrom, filter.dateTo);
       const groupId = filter.groupId;
@@ -539,12 +538,6 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
   // shift tidak boleh membanting tutup panel yang menjelaskan jam shift itu.
   const { open: openPanels, stop: stopExplain } = bindExplainToggles(container);
 
-  const onTermClick = (e: Event): void => {
-    const term = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-term]')?.dataset.term;
-    if (term) openGlossary(term);
-  };
-  container.addEventListener('click', onTermClick);
-
   const onProfileChange = (): void => {
     hours = normalizeHours(readJson<SecurityHours>(HOURS_KEY + ctx.database, defaultHours()));
     render();
@@ -560,7 +553,6 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
     offFilter();
     ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     container.removeEventListener('change', onChange);
-    container.removeEventListener('click', onTermClick);
     stopExplain();
     container.innerHTML = ''; // discards every rendered input with its node
   };

@@ -33,31 +33,21 @@
   color: var(--fa-muted);
 }
 
-.fa-fuel-tag {
-  flex: none;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  padding: 0.2rem 0.5rem;
-  border-radius: 999px;
-  background: var(--fa-med-bg);
-  color: var(--fa-med-fg);
-}
-
-/* The pill also rides inside the km/L KPI card, where it must stay small — the
-   banner rule below is what blows it up, and only there. */
-.fa-fuel-tag.is-estimate {
-  background: var(--fa-high-bg);
-  color: var(--fa-high-fg);
-}
-
-/* Estimated sources: the warning colour, and ESTIMASI becomes the biggest
-   piece of text on the card so it cannot be skimmed past. */
+/* Chip sumber sekarang memakai .fa-kpi-kind bersama seluruh dashboard (dulu
+   .fa-fuel-tag, gaya ketiga untuk arti yang sama). Yang dipertahankan dari gaya
+   lama hanya satu hal, dan itu yang paling penting: di dalam banner, ESTIMASI
+   dibesarkan sampai jadi teks terbesar di kartu supaya tidak bisa dilewati
+   sekilas. Di kartu KPI ukurannya tetap normal. */
 .fa-fuel-banner.is-estimate {
   border-left-color: var(--fa-danger);
 }
 
-.fa-fuel-banner.is-estimate .fa-fuel-tag {
+.fa-fuel-banner .fa-kpi-kind {
+  flex: none;
+  border-radius: 999px;
+}
+
+.fa-fuel-banner.is-estimate .fa-kpi-kind {
   font-size: 1.1rem;
   padding: 0.35rem 0.75rem;
   background: var(--fa-high-bg);

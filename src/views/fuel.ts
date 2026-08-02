@@ -26,8 +26,29 @@ import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
 import { esc, clamp, token, int, one, upto1 } from '../utils/format';
 import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
-import { openGlossary } from '../components/glossary';
 import { summarizeFuel } from '../analytics/summary';
+import type { ViewCtx } from './registry';
+import type {
+  FilterChangeDetail,
+  TripDTO,
+  DeviceLite,
+  FuelTransactionDTO,
+  StatusDataDTO,
+} from '../api/fetchers/types';
+import {
+  pickFuelSource,
+  consumptionFromCumulative,
+  consumptionFromLevel,
+  estimateFromDistance,
+  litresPer100Km,
+  fleetKmPerLitre,
+  economyByDevice,
+  idleFuelWaste,
+  groupByDay,
+  dayKey,
+  sumValues,
+  type FuelSource,
+} from '../analytics/fuel';
 
 // Dari mana liternya datang. Empat sumber, akurasi jauh berbeda — dan halaman
 // ini tidak boleh terdengar sama yakinnya untuk keempatnya.
@@ -56,28 +77,6 @@ const SOURCE_DETAIL: Record<FuelSource, string> = {
     'terlihat sama efisien, karena memang begitulah cara angkanya dibuat.',
   none: 'Tidak ada sumber bahan bakar maupun jarak tempuh pada rentang ini.',
 };
-import type { ViewCtx } from './registry';
-import type {
-  FilterChangeDetail,
-  TripDTO,
-  DeviceLite,
-  FuelTransactionDTO,
-  StatusDataDTO,
-} from '../api/fetchers/types';
-import {
-  pickFuelSource,
-  consumptionFromCumulative,
-  consumptionFromLevel,
-  estimateFromDistance,
-  litresPer100Km,
-  fleetKmPerLitre,
-  economyByDevice,
-  idleFuelWaste,
-  groupByDay,
-  dayKey,
-  sumValues,
-  type FuelSource,
-} from '../analytics/fuel';
 
 Chart.register(...registerables);
 
@@ -182,7 +181,7 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
     const groupId = filter.groupId;
     const database = ctx.database;
 
-    setHtml('<p class="fa-empty">Memuat data BBM…</p>');
+    setHtml('<p class="fa-loading">Memuat data BBM…</p>');
 
     try {
       // Trips are needed by every source (the km denominator and the idle
@@ -264,7 +263,7 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
       setHtml(
         `<p class="fa-empty">Tidak ada data BBM untuk periode ini. Database ini tidak punya transaksi kartu BBM,
          tidak melaporkan diagnostik bahan bakar (total fuel used / fuel level), dan tidak ada jarak tempuh dari
-         trip yang bisa dipakai untuk estimasi. Coba perluas rentang tanggal atau pilih group lain.</p>`
+         trip yang bisa dipakai untuk estimasi. Coba perluas rentang tanggal atau pilih grup lain.</p>`
       );
       return;
     }
@@ -518,12 +517,6 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
   };
   ctx.rootEl.addEventListener('dashboard:profile-change', onProfileChange);
 
-  const onTermClick = (e: Event): void => {
-    const term = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-term]')?.dataset.term;
-    if (term) openGlossary(term);
-  };
-  container.addEventListener('click', onTermClick);
-
   const stopFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   void load(getCurrentFilter());
 
@@ -532,7 +525,6 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
     stopFilter();
     ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     ctx.rootEl.removeEventListener('dashboard:view-shown', onShown);
-    container.removeEventListener('click', onTermClick);
     stopExplain();
     destroyCharts();
   };

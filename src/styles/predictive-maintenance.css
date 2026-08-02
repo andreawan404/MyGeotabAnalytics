@@ -70,27 +70,13 @@
   color: var(--fa-text);
 }
 
-/* terukur / heuristik provenance chips. The whole point of this view: if a
-   number is a guess, it says so next to the number, not in a footnote. */
-.fa-pm-chip {
-  display: inline-block;
-  font-size: 0.65rem;
-  font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0;
-  padding: 0.1rem 0.4rem;
+/* Chip terukur/heuristik halaman ini sekarang memakai .fa-kpi-kind bersama
+   seluruh dashboard (dulu .fa-pm-chip-*, gaya kedua untuk arti yang sama).
+   Yang tersisa di sini hanya penyesuaian bentuknya di dalam header tabel. */
+.fa-pm-th .fa-kpi-kind {
+  margin-right: 0;
   border-radius: 999px;
   white-space: nowrap;
-}
-
-.fa-pm-chip-measured {
-  background: var(--fa-low-bg);
-  color: var(--fa-low-fg);
-}
-
-.fa-pm-chip-heuristic {
-  background: var(--fa-med-bg);
-  color: var(--fa-med-fg);
 }
 
 .fa-pm-th {

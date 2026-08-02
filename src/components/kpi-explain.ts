@@ -61,7 +61,8 @@ export function renderExplainCard(input: ExplainCardInput): string {
       <div class="fa-kpi-label">${esc(label)}</div>
       <div class="fa-kpi-value">${valueHtml}</div>
       <p class="fa-kpi-source">
-        <span class="fa-kpi-kind fa-kpi-kind-${explain.kind}">${KIND_LABEL[explain.kind]}</span>
+        <button type="button" class="fa-kpi-kind fa-kpi-kind-${explain.kind} fa-kpi-kind-btn"
+                data-term="${explain.kind}" aria-label="Apa arti ${explain.kind}?">${KIND_LABEL[explain.kind]}</button>
         ${esc(caption)}
       </p>
       ${extra}
