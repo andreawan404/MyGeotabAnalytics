@@ -22,10 +22,27 @@ export function isCriticalLamp(faultLampState: string | null): boolean {
 
 /** Geotab also emits Inactive/None rows (a fault that already cleared) and rows
  *  a technician dismissed. Neither is something anyone still has to act on. */
-const ACTIVE_STATE = /^(active|pending)$/i;
+const ACTIVE_STATE = /^active$/i;
 
+/** In OBD-II, "Pending" means the ECU saw the fault ONCE and has not confirmed it
+ *  — confirmation needs a second drive cycle. A mechanic does not treat that as
+ *  work, so folding it into "aktif" inflates the workshop list with faults that
+ *  may clear by themselves. Counted separately, never as active. */
+const PENDING_STATE = /^pending$/i;
+
+function undismissed(f: FaultDataDTO): boolean {
+  return f.dismissDateTime == null;
+}
+
+/** Confirmed and still outstanding — the workshop worklist. */
 export function activeFaults(faults: FaultDataDTO[]): FaultDataDTO[] {
-  return faults.filter((f) => f.dismissDateTime == null && ACTIVE_STATE.test(f.faultState));
+  return faults.filter((f) => undismissed(f) && ACTIVE_STATE.test(f.faultState));
+}
+
+/** Detected but unconfirmed — watch, do not dispatch. Disjoint from activeFaults
+ *  by construction, so the two can be summed without double counting. */
+export function pendingFaults(faults: FaultDataDTO[]): FaultDataDTO[] {
+  return faults.filter((f) => undismissed(f) && PENDING_STATE.test(f.faultState));
 }
 
 export interface FaultCodeTally {
@@ -99,7 +116,7 @@ export function rankVehiclesByFault(faults: FaultDataDTO[], devices: DeviceLite[
       byDevice.set(f.deviceId, row);
     }
     if (isCriticalLamp(f.faultLampState)) row.criticalLamps++;
-    if (f.dismissDateTime == null && ACTIVE_STATE.test(f.faultState)) row.activeCount++;
+    if (undismissed(f) && ACTIVE_STATE.test(f.faultState)) row.activeCount++;
     if (isAfter(f.dateTime, row.lastFaultAt)) row.lastFaultAt = f.dateTime;
   }
 
@@ -126,12 +143,19 @@ export interface HealthSummary {
   totalDevices: number;
   pctAffected: number;
   criticalLampCount: number;
+  activeCount: number;
+  pendingCount: number;
+  /** Rows that are neither active nor pending: dismissed, or already cleared. */
+  resolvedCount: number;
   /** Raw faultState histogram across ALL rows, dismissed included. */
   byState: Record<string, number>;
 }
 
 export function healthSummary(faults: FaultDataDTO[], devices: DeviceLite[]): HealthSummary {
   const active = activeFaults(faults);
+  const pending = pendingFaults(faults);
+  // "Bermasalah" means confirmed work outstanding — a pending fault the ECU has
+  // not confirmed does not put a vehicle on the workshop list.
   const affected = new Set(active.map((f) => f.deviceId));
 
   const byState: Record<string, number> = {};
@@ -144,6 +168,11 @@ export function healthSummary(faults: FaultDataDTO[], devices: DeviceLite[]): He
     pctAffected: devices.length > 0 ? (affected.size / devices.length) * 100 : 0,
     // Counted over ACTIVE faults only: a red lamp that already cleared is history.
     criticalLampCount: active.filter((f) => isCriticalLamp(f.faultLampState)).length,
+    activeCount: active.length,
+    pendingCount: pending.length,
+    // Derived here rather than in the view so the three buckets provably sum to
+    // the row count and no KPI can ever double count or go negative.
+    resolvedCount: faults.length - active.length - pending.length,
     byState,
   };
 }

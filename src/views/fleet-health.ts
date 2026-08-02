@@ -86,7 +86,7 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
         faultsEl.innerHTML = `<p class="fa-empty">Tidak ada data fault engine pada rentang ini — perangkat perlu koneksi OBD/J1939 dan kendaraan yang melaporkan DTC.</p>`;
       } else {
         const active = activeFaults(faults);
-        renderKpis(faults.length, active.length, healthSummary(faults, devices));
+        renderKpis(healthSummary(faults, devices));
         latestTop = topFaultCodes(faults, diagnostics, 10);
         renderChart();
         // The worklist is built from ACTIVE faults only — a red lamp that already
@@ -105,13 +105,17 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
     await loadUsage(run, toIso, filter.groupId, diagnostics, devices);
   }
 
-  function renderKpis(total: number, activeCount: number, s: ReturnType<typeof healthSummary>): void {
+  // Active / Pending / resolved are disjoint and sum to the row count — the three
+  // counts come from healthSummary rather than being re-derived here, so no card
+  // can drift out of step with the others.
+  function renderKpis(s: ReturnType<typeof healthSummary>): void {
     kpiEl.hidden = false;
     kpiEl.innerHTML = `
       ${kpiCard('Unit Bermasalah', `${s.devicesWithActiveFaults} dari ${s.totalDevices}`, `${s.pctAffected.toFixed(1)}% armada`)}
       ${kpiCard('Lampu Kritis (MIL)', String(s.criticalLampCount), 'Fault aktif dengan lampu MIL / stop merah')}
-      ${kpiCard('Fault Aktif', String(activeCount), 'Belum ditangani (Active / Pending)')}
-      ${kpiCard('Fault Ditolak/Selesai', String(total - activeCount), 'Sudah dismiss atau sudah hilang sendiri')}
+      ${kpiCard('Fault Aktif', String(s.activeCount), 'Terkonfirmasi ECU, belum ditangani')}
+      ${kpiCard('Perlu Dipantau', String(s.pendingCount), 'Pending — terdeteksi, belum dikonfirmasi ECU')}
+      ${kpiCard('Fault Ditolak/Selesai', String(s.resolvedCount), 'Sudah dismiss atau sudah hilang sendiri')}
     `;
   }
 

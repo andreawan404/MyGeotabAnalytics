@@ -1,5 +1,12 @@
 import assert from 'node:assert';
-import { isCriticalLamp, activeFaults, topFaultCodes, rankVehiclesByFault, healthSummary } from './fleet-health';
+import {
+  isCriticalLamp,
+  activeFaults,
+  pendingFaults,
+  topFaultCodes,
+  rankVehiclesByFault,
+  healthSummary,
+} from './fleet-health';
 import type { FaultDataDTO, DiagnosticDTO, DeviceLite } from '../api/fetchers/types';
 
 function fault(over: Partial<FaultDataDTO>): FaultDataDTO {
@@ -51,9 +58,39 @@ const mixed = [
 ];
 assert.deepStrictEqual(
   activeFaults(mixed).map((f) => f.id),
-  ['a', 'p'],
-  'only undismissed Active/Pending survive'
+  ['a'],
+  'only undismissed Active survives — Pending is NOT active'
 );
+
+// --- pendingFaults: disjoint from active, and dismissed rows drop out too -----
+// OBD-II "Pending" = seen once, unconfirmed. Counting it as active inflates the
+// workshop list with faults that may clear on their own.
+assert.deepStrictEqual(
+  pendingFaults(mixed).map((f) => f.id),
+  ['p'],
+  'only undismissed Pending survives'
+);
+{
+  const withDismissedPending = [
+    fault({ id: 'p1', faultState: 'Pending' }),
+    fault({ id: 'p2', faultState: 'Pending', dismissDateTime: '2026-07-31T00:00:00.000Z' }),
+  ];
+  assert.deepStrictEqual(
+    pendingFaults(withDismissedPending).map((f) => f.id),
+    ['p1'],
+    'a dismissed Pending is neither pending nor active'
+  );
+  assert.strictEqual(activeFaults(withDismissedPending).length, 0);
+}
+
+// The two sets must never overlap, or the KPI cards double count.
+{
+  const ids = new Set(activeFaults(mixed).map((f) => f.id));
+  assert.ok(
+    pendingFaults(mixed).every((f) => !ids.has(f.id)),
+    'activeFaults and pendingFaults must be disjoint'
+  );
+}
 
 // --- topFaultCodes: sums count across rows, resolves names, honours limit ----
 const forCodes = [
@@ -134,5 +171,38 @@ assert.strictEqual(summary.totalDevices, 3);
 assert.ok(Math.abs(summary.pctAffected - 33.333) < 0.01);
 assert.strictEqual(summary.criticalLampCount, 1, 'cleared and dismissed red lamps do not count');
 assert.deepStrictEqual(summary.byState, { Active: 3, Inactive: 1 }, 'histogram spans dismissed rows too');
+assert.strictEqual(summary.pendingCount, 0, 'no Pending rows in this fixture');
+
+// --- the three KPI buckets must partition the rows exactly -------------------
+// Aktif + Perlu Dipantau + Ditolak/Selesai are rendered as three cards; if they
+// ever overlap or leave a gap, one of them silently lies.
+{
+  const rows = [
+    fault({ id: '1', faultState: 'Active' }),
+    fault({ id: '2', faultState: 'Active', faultLampState: 'RedStopLamp' }),
+    fault({ id: '3', faultState: 'Pending' }),
+    fault({ id: '4', faultState: 'Inactive' }),
+    fault({ id: '5', faultState: 'None' }),
+    fault({ id: '6', faultState: 'Active', dismissDateTime: '2026-08-01T00:00:00.000Z' }),
+    fault({ id: '7', faultState: 'Pending', dismissDateTime: '2026-08-01T00:00:00.000Z' }),
+  ];
+  const s = healthSummary(rows, devices);
+  assert.strictEqual(s.activeCount, 2);
+  assert.strictEqual(s.pendingCount, 1);
+  assert.strictEqual(s.resolvedCount, 4, 'Inactive + None + both dismissed rows');
+  assert.strictEqual(
+    s.activeCount + s.pendingCount + s.resolvedCount,
+    rows.length,
+    'the three cards must sum to the total row count'
+  );
+  assert.ok(s.resolvedCount >= 0, 'resolvedCount must never go negative');
+  assert.strictEqual(s.criticalLampCount, 1, 'red lamp on an active row only');
+}
+
+// An all-active fleet leaves nothing resolved — the subtraction must not underflow.
+{
+  const s = healthSummary([fault({ faultState: 'Active' })], devices);
+  assert.strictEqual(s.resolvedCount, 0);
+}
 
 console.log('fleet-health.check.ts: PASS');
