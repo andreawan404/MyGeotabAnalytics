@@ -81,6 +81,20 @@ export const rawZones = [
       { x: 106.6505, y: -6.3045 },
     ],
   },
+  // Deliberately swallows all four zones above. Trip Report must resolve a stop
+  // to the SMALLEST zone containing it — otherwise every journey reads
+  // "Jabodetabek -> Jabodetabek" and the report says nothing. Without an
+  // overlapping zone in the fixtures that rule is never exercised in dev.
+  {
+    id: 'zone-5',
+    name: 'Jabodetabek',
+    points: [
+      { x: 106.5, y: -5.9 },
+      { x: 107.3, y: -5.9 },
+      { x: 107.3, y: -6.5 },
+      { x: 106.5, y: -6.5 },
+    ],
+  },
 ];
 
 // Named waypoints reused as trip endpoints and log-record route anchors.

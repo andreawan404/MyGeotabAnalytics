@@ -23,6 +23,7 @@ export interface ViewDef {
 
 export const VIEWS: ViewDef[] = [
   { id: 'overview', label: 'Ringkasan', load: () => import('./overview').then((m) => m.initOverviewView) },
+  { id: 'trip-report', label: 'Trip Report', load: () => import('./trip-report').then((m) => m.initTripReportView) },
   { id: 'health', label: 'Kesehatan Armada', load: () => import('./fleet-health').then((m) => m.initFleetHealthView) },
   {
     id: 'maintenance',
