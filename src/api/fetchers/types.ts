@@ -38,9 +38,27 @@ export interface ExceptionEventDTO {
   durationSec: number;
 }
 
+/** One comparison inside a Rule's condition tree — the threshold the rule fires
+ *  at, and the parameter it measures. `Condition.value` is documented as "the
+ *  specified value to evaluate against". */
+export interface RuleThreshold {
+  /** Diagnostic being compared, when the condition names one (e.g. braking G). */
+  diagnosticId: string | null;
+  /** Raw Geotab ConditionType, e.g. "ValueMoreThan" / "ValueLessThan". */
+  conditionType: string;
+  value: number;
+}
+
 export interface RuleDTO {
   id: string;
   name: string;
+  /** Custom | Stock | ZoneStop — a Stock rule is one of Geotab's built-ins. */
+  baseType: string | null;
+  /** Every diagnostic referenced anywhere in the condition tree. This is what
+   *  makes a rule classifiable regardless of what it was NAMED: a rule
+   *  comparing acceleration-forward IS harsh braking, in any language. */
+  diagnosticIds: string[];
+  thresholds: RuleThreshold[];
 }
 
 export interface DeviceLite {

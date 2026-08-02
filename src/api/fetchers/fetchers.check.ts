@@ -2,6 +2,7 @@ import assert from 'node:assert';
 import { initGeotabClient, type GeotabApi } from '../geotabClient';
 import { fetchTrips } from './trip';
 import { fetchExceptionEvents } from './exception-event';
+import { fetchRules } from './rule';
 import { fetchLogRecords } from './logrecord';
 import { fetchFaultData } from './fault-data';
 import { fetchStatusData, fetchStatusDataMulti } from './status-data';
@@ -114,9 +115,21 @@ async function run() {
   initGeotabClient(
     mockApi({
       Rule: [
-        { id: 'RuleHarshBrakingId', name: 'Pengereman Mendadak' },
+        {
+          id: 'RuleHarshBrakingId',
+          name: 'Pengereman Mendadak',
+          baseType: 'Stock',
+          // The comparison sits UNDER an And node, as real rules do — a flat
+          // fixture would not prove the condition walker recurses.
+          condition: {
+            conditionType: 'And',
+            children: [
+              { conditionType: 'ValueLessThan', value: -0.4, diagnostic: { id: 'DiagnosticAccelerationForwardBrakingId' } },
+            ],
+          },
+        },
         { id: 'RuleIdlingId', name: 'Mesin Menyala Terlalu Lama' },
-        { id: 'z9Z9', name: 'Perawatan Terjadwal' },
+        { id: 'z9Z9', name: 'Perawatan Terjadwal', condition: null },
       ],
       ExceptionEvent: [
         {
@@ -158,6 +171,25 @@ async function run() {
   );
   assert.strictEqual(events.find((e) => e.id === 'e2')?.stop, null, 'missing activeTo -> null');
   assert.strictEqual(events.find((e) => e.id === 'e3')?.durationSec, 60);
+
+  // fetchRules: the condition tree is the ONLY place a rule's firing threshold
+  // is recorded, and the comparison is nested under operator nodes.
+  const rules = await fetchRules({ database: 'checkdb2' });
+  const braking = rules.find((r) => r.id === 'RuleHarshBrakingId')!;
+  assert.deepStrictEqual(
+    braking.diagnosticIds,
+    ['DiagnosticAccelerationForwardBrakingId'],
+    'diagnostic collected from a NESTED condition node'
+  );
+  assert.strictEqual(braking.thresholds.length, 1, 'And/Or plumbing carries no threshold');
+  assert.strictEqual(braking.thresholds[0].value, -0.4);
+  assert.strictEqual(braking.thresholds[0].conditionType, 'ValueLessThan');
+  assert.strictEqual(braking.thresholds[0].diagnosticId, 'DiagnosticAccelerationForwardBrakingId');
+  assert.strictEqual(braking.baseType, 'Stock');
+
+  const noCondition = rules.find((r) => r.id === 'z9Z9')!;
+  assert.deepStrictEqual(noCondition.thresholds, [], 'null condition -> no thresholds, no throw');
+  assert.deepStrictEqual(noCondition.diagnosticIds, []);
 
   // fetchLogRecords: missing date range must reject (no unbounded fetch, ever).
   await assert.rejects(

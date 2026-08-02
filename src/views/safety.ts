@@ -15,12 +15,14 @@ import { fetchTrips } from '../api/fetchers/trip';
 import { fetchDevices } from '../api/fetchers/device';
 import { fetchDrivers } from '../api/fetchers/driver';
 import { fetchRules } from '../api/fetchers/rule';
+import { fetchDiagnostics } from '../api/fetchers/diagnostic';
 import type {
   ExceptionEventDTO,
   TripDTO,
   DeviceLite,
   DriverLite,
   RuleDTO,
+  DiagnosticDTO,
   FilterChangeDetail,
 } from '../api/fetchers/types';
 import { toUtcRange } from '../utils/date-range';
@@ -38,7 +40,9 @@ import {
   rankDevices,
   rankDrivers,
   topCategoryByDevice,
+  violationsByDevice,
   type Category,
+  type ViolationBreakdown,
 } from '../analytics/safety';
 
 Chart.register(...registerables);
@@ -81,7 +85,7 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     try {
       const { fromIso, toIso } = toUtcRange(filter.dateFrom, filter.dateTo);
       const groupId = filter.groupId;
-      const [events, trips, devices, drivers, rules] = await Promise.all([
+      const [events, trips, devices, drivers, rules, diagnostics] = await Promise.all([
         fetchExceptionEvents({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
         fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
         fetchDevices({ database: ctx.database, groupId, fromDate: fromIso, toDate: toIso }),
@@ -98,10 +102,16 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
           console.warn('safety: fetchRules failed, coverage unknown', err);
           return [] as RuleDTO[];
         }),
+        // Only to turn a diagnostic id into a readable name in the threshold
+        // line. Cached 24h and shared with every other view — effectively free.
+        fetchDiagnostics({ database: ctx.database }).catch((err) => {
+          console.warn('safety: fetchDiagnostics failed, thresholds will show raw ids', err);
+          return [] as DiagnosticDTO[];
+        }),
       ]);
 
       if (seq !== loadSeq) return; // a newer load won
-      render(events, trips, devices, drivers, rules, fromIso, toIso);
+      render(events, trips, devices, drivers, rules, diagnostics, fromIso, toIso);
     } catch (err) {
       if (seq !== loadSeq) return;
       console.error('safety: load failed', err);
@@ -116,10 +126,12 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     devices: DeviceLite[],
     drivers: DriverLite[],
     rules: RuleDTO[],
+    diagnostics: DiagnosticDTO[],
     fromIso: string,
     toIso: string
   ): void {
     const configured = configuredCategories(rules);
+    const diagnosticNames = new Map(diagnostics.map((d) => [d.id, d.name]));
     // `other` is the catch-all, so it never proves a safety rule exists.
     const safetyCats = CATEGORIES.filter((c) => c !== 'other');
     const missing = safetyCats.filter((c) => !configured[c]);
@@ -141,7 +153,8 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     const breakdown = categoryBreakdown(events);
     const perDevice = eventsPer100Km(events, trips);
     const ranked = rankDevices(perDevice, devices);
-    const topCat = topCategoryByDevice(events);
+    const topCat = topCategoryByDevice(events, rules);
+    const violations = violationsByDevice(events, rules);
     const trend = dailyTrend(events, fromIso, toIso);
     const attribution = driverAttributionRate(trips);
 
@@ -200,7 +213,7 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
 
         <section class="fa-safety-section">
           <h2>Peringkat Unit — terburuk ke terbaik</h2>
-          <div class="fa-safety-tablewrap">${deviceTable(ranked, topCat)}</div>
+          <div class="fa-safety-tablewrap">${deviceTable(ranked, topCat, violations, diagnosticNames)}</div>
         </section>
 
         <section class="fa-safety-section">
@@ -335,9 +348,23 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
   };
   ctx.rootEl.addEventListener('dashboard:view-shown', onShown);
 
+  // Delegated on the container: the table is rebuilt on every filter change, so
+  // per-row handlers would have to be re-attached (and would leak) each time.
+  function onToggle(e: Event): void {
+    const btn = (e.target as HTMLElement | null)?.closest<HTMLButtonElement>('.fa-safety-toggle');
+    if (!btn) return;
+    const row = document.getElementById(btn.dataset.target ?? '');
+    if (!row) return;
+    const open = btn.getAttribute('aria-expanded') === 'true';
+    btn.setAttribute('aria-expanded', String(!open));
+    row.hidden = open;
+  }
+  container.addEventListener('click', onToggle);
+
   return () => {
     loadSeq++; // in-flight responses land after unmount; make them no-ops
     ctx.rootEl.removeEventListener('dashboard:view-shown', onShown);
+    container.removeEventListener('click', onToggle);
     unsubscribeFilter();
     destroyCharts();
   };
@@ -364,13 +391,82 @@ function categoryKpi(
     : kpi(esc(CATEGORY_LABELS[cat]), '—', 'Rule belum dikonfigurasi di database ini');
 }
 
+/** Renders a rule's firing threshold, e.g. "< −0,40 G". Geotab records the
+ *  operator and the value; the diagnostic name says what is measured. */
+function thresholdText(
+  t: { diagnosticId: string | null; conditionType: string; value: number },
+  diagnosticNames: Map<string, string>
+): string {
+  const op = /less|below/i.test(t.conditionType) ? '<' : /more|above|greater/i.test(t.conditionType) ? '>' : '=';
+  const what = t.diagnosticId ? diagnosticNames.get(t.diagnosticId) ?? t.diagnosticId : '';
+  return `${what ? `${esc(what)} ` : ''}${op} ${nf2.format(t.value)}`;
+}
+
+function violationList(rows: ViolationBreakdown[], diagnosticNames: Map<string, string>): string {
+  if (rows.length === 0) {
+    return '<p class="fa-safety-detail-empty">Tidak ada rincian pelanggaran untuk unit ini.</p>';
+  }
+  return `
+    <ul class="fa-safety-detail-list">
+      ${rows
+        .map(
+          (v) => `
+        <li class="fa-safety-detail-item">
+          <span class="fa-safety-count">${nf0.format(v.count)}×</span>
+          <div class="fa-safety-detail-main">
+            <div class="fa-safety-detail-name">
+              ${esc(v.ruleName)}
+              ${
+                // The chip earns its place only when it says something the rule
+                // name does not — "Pengereman Mendadak / Pengereman Mendadak" is
+                // noise, but "Peringatan Unit / Pengereman Mendadak" is the whole
+                // point of classifying by diagnostic.
+                v.ruleName.trim().toLowerCase() === CATEGORY_LABELS[v.category].toLowerCase()
+                  ? ''
+                  : `<span class="fa-safety-cat">${esc(CATEGORY_LABELS[v.category])}</span>`
+              }
+            </div>
+            <div class="fa-safety-detail-meta">
+              ${
+                v.thresholds.length
+                  ? `Ambang: ${v.thresholds.map((t) => thresholdText(t, diagnosticNames)).join(' &amp; ')} · `
+                  : ''
+              }total durasi ${esc(formatDur(v.totalDurationSec))} · terakhir ${esc(formatWhen(v.lastAt))}
+            </div>
+          </div>
+        </li>`
+        )
+        .join('')}
+    </ul>
+    <p class="fa-safety-detail-note">
+      MyGeotab <strong>tidak menyimpan nilai terukur</strong> tiap pelanggaran (berapa G atau km/j sebenarnya) —
+      yang tersedia hanya ambang batas Rule di atas, durasi, dan jarak.
+    </p>`;
+}
+
+function formatDur(sec: number): string {
+  if (!Number.isFinite(sec) || sec <= 0) return '0m';
+  const h = Math.floor(sec / 3600);
+  const m = Math.round((sec % 3600) / 60);
+  return h > 0 ? `${h}j ${m}m` : `${m}m`;
+}
+
+function formatWhen(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return '—';
+  return new Date(t).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
 function deviceTable(
   ranked: ReturnType<typeof rankDevices>,
-  topCat: ReturnType<typeof topCategoryByDevice>
+  topCat: ReturnType<typeof topCategoryByDevice>,
+  violations: Record<string, ViolationBreakdown[]>,
+  diagnosticNames: Map<string, string>
 ): string {
   return `
-    <table class="fa-table">
+    <table class="fa-table fa-safety-table">
       <thead><tr>
+        <th></th>
         <th>Unit</th>
         <th class="fa-safety-num">Pelanggaran</th>
         <th class="fa-safety-num">Jarak (km)</th>
@@ -381,8 +477,15 @@ function deviceTable(
         ${ranked
           .map((r, i) => {
             const cat = topCat.get(r.deviceId);
+            const id = `fa-safety-detail-${i}`;
             return `
           <tr class="${i < 3 && r.per100Km !== null ? 'fa-safety-worst' : ''}">
+            <td class="fa-safety-togglecell">
+              <button type="button" class="fa-safety-toggle" aria-expanded="false" aria-controls="${id}"
+                      aria-label="Lihat rincian pelanggaran ${esc(r.name)}" data-target="${id}">
+                <span class="fa-safety-chevron" aria-hidden="true"></span>
+              </button>
+            </td>
             <td>${esc(r.name)}</td>
             <td class="fa-safety-num">${nf0.format(r.events)}</td>
             <td class="fa-safety-num">${nf1.format(r.km)}</td>
@@ -392,6 +495,9 @@ function deviceTable(
               r.per100Km === null ? '<span class="fa-safety-na">—</span>' : nf2.format(r.per100Km)
             }</td>
             <td>${cat ? CATEGORY_LABELS[cat] : '<span class="fa-safety-na">—</span>'}</td>
+          </tr>
+          <tr class="fa-safety-detail-row" id="${id}" hidden>
+            <td colspan="6">${violationList(violations[r.deviceId] ?? [], diagnosticNames)}</td>
           </tr>`;
           })
           .join('')}

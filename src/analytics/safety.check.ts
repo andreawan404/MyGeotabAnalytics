@@ -1,8 +1,10 @@
 import assert from 'node:assert';
 import {
   categorize,
+  categorizeRule,
   categoryBreakdown,
   configuredCategories,
+  violationsByDevice,
   dailyTrend,
   driverAttributionRate,
   eventsPer100Km,
@@ -261,6 +263,76 @@ assert.deepStrictEqual(rankDrivers([], [], []), []);
   for (const r of rules) {
     assert.strictEqual(cov[categorize(r.id, r.name)], true, `categorize/coverage disagree for ${r.id}`);
   }
+}
+
+// --- categorizeRule: diagnostic beats name, because names are free text -------
+// Every unit read "Lainnya" on the real database: customer rule ids are opaque
+// and names are whatever someone typed. The diagnostic a condition compares is
+// neither, so it is the stronger evidence.
+{
+  const braking = {
+    id: 'SMA-07',
+    name: 'Peringatan Unit', // says nothing about braking
+    diagnosticIds: ['DiagnosticAccelerationForwardBrakingId'],
+    thresholds: [{ diagnosticId: 'DiagnosticAccelerationForwardBrakingId', conditionType: 'ValueLessThan', value: -0.55 }],
+  };
+  assert.strictEqual(categorizeRule(braking), 'harsh-braking', 'classified from the diagnostic, not the name');
+
+  // Same axis, positive threshold -> acceleration, not braking.
+  assert.strictEqual(
+    categorizeRule({ ...braking, thresholds: [{ diagnosticId: 'DiagnosticAccelerationForwardBrakingId', conditionType: 'ValueMoreThan', value: 0.38 }] }),
+    'harsh-acceleration',
+    'sign of the threshold separates acceleration from braking'
+  );
+
+  assert.strictEqual(
+    categorizeRule({ id: 'x', name: '', diagnosticIds: ['DiagnosticAccelerationSideToSideId'] }),
+    'harsh-cornering'
+  );
+  assert.strictEqual(categorizeRule({ id: 'x', name: '', diagnosticIds: ['DiagnosticGoDeviceSpeedId'] }), 'speeding');
+
+  // No diagnostic at all -> fall back to the id/name path, unchanged.
+  assert.strictEqual(categorizeRule({ id: 'b1A2', name: 'Pengereman Mendadak' }), 'harsh-braking');
+  assert.strictEqual(categorizeRule({ id: 'c3D4', name: 'Perawatan Terjadwal' }), 'other');
+}
+
+// --- violationsByDevice: what the expandable row shows ------------------------
+{
+  const rules = [
+    {
+      id: 'RuleHarshBrakingId',
+      name: 'Pengereman Mendadak',
+      diagnosticIds: ['DiagnosticAccelerationForwardBrakingId'],
+      thresholds: [{ diagnosticId: 'DiagnosticAccelerationForwardBrakingId', conditionType: 'ValueLessThan', value: -0.4 }],
+    },
+  ];
+  const ev = (over: Partial<ExceptionEventDTO>): ExceptionEventDTO => ({
+    id: 'e', deviceId: 'd1', ruleId: 'RuleHarshBrakingId', ruleName: 'Pengereman Mendadak',
+    severity: 'high', start: '2026-08-01T08:00:00.000Z', stop: null, durationSec: 30, ...over,
+  });
+
+  const out = violationsByDevice(
+    [
+      ev({ id: '1' }),
+      ev({ id: '2', start: '2026-08-02T09:00:00.000Z', durationSec: 45 }),
+      ev({ id: '3', ruleId: 'UnknownRuleId', ruleName: 'Aturan Tak Dikenal', durationSec: 10 }),
+    ],
+    rules
+  );
+
+  assert.strictEqual(out['d1'].length, 2, 'grouped per rule, not per event');
+  assert.strictEqual(out['d1'][0].ruleId, 'RuleHarshBrakingId', 'sorted by count desc');
+  assert.strictEqual(out['d1'][0].count, 2);
+  assert.strictEqual(out['d1'][0].totalDurationSec, 75, 'durations summed');
+  assert.strictEqual(out['d1'][0].lastAt, '2026-08-02T09:00:00.000Z', 'latest occurrence kept');
+  assert.strictEqual(out['d1'][0].thresholds[0].value, -0.4, 'threshold carried from the Rule');
+
+  // A rule missing from the Rule table must still be listed, not dropped.
+  const unknown = out['d1'].find((v) => v.ruleId === 'UnknownRuleId')!;
+  assert.strictEqual(unknown.ruleName, 'Aturan Tak Dikenal');
+  assert.deepStrictEqual(unknown.thresholds, [], 'no threshold known -> empty, not invented');
+
+  assert.deepStrictEqual(violationsByDevice([], rules), {}, 'empty input -> empty map');
 }
 
 console.log('safety.check.ts: PASS');

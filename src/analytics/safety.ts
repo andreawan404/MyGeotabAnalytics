@@ -76,6 +76,52 @@ export function categorize(ruleId: string, ruleName: string): Category {
   return 'other';
 }
 
+// What the rule MEASURES, which is stronger evidence than what someone named it.
+// A rule comparing acceleration-side-to-side is a cornering rule whether it is
+// called "Menikung Tajam", "Harsh Cornering" or "SMA-07".
+const DIAGNOSTIC_PATTERNS: [RegExp, Category][] = [
+  [/AccelerationSideToSide|SideToSide|Cornering/i, 'harsh-cornering'],
+  [/AccelerationForwardBraking|ForwardBraking|Braking/i, 'harsh-braking'],
+  [/Seatbelt|SeatBelt/i, 'seatbelt'],
+  [/Speed/i, 'speeding'],
+  [/Idle|Idling/i, 'idling'],
+];
+
+/** Minimal shape needed to classify — accepts a RuleDTO without importing it,
+ *  keeping this module free of the fetcher layer. */
+export interface ClassifiableRule {
+  id: string;
+  name: string;
+  diagnosticIds?: string[];
+  thresholds?: { diagnosticId: string | null; conditionType: string; value: number }[];
+}
+
+/**
+ * Category for a whole Rule, using the strongest evidence available.
+ *
+ * DIAGNOSTIC FIRST. Rule ids are opaque for customer-defined rules ("b1A2") and
+ * names are free text in whatever language the customer types — which is why
+ * every unit read "Lainnya" on a real database. The diagnostic a condition
+ * compares is neither: it is a stable Geotab identifier describing what is
+ * actually being measured.
+ *
+ * Forward/braking is one signed axis: a NEGATIVE threshold is deceleration
+ * (braking), a positive one is acceleration. Sign is checked before falling back
+ * to the axis default.
+ */
+export function categorizeRule(rule: ClassifiableRule): Category {
+  for (const diagnosticId of rule.diagnosticIds ?? []) {
+    if (/AccelerationForwardBraking|ForwardBraking/i.test(diagnosticId)) {
+      const t = (rule.thresholds ?? []).find((x) => x.diagnosticId === diagnosticId);
+      // No threshold to read the sign from -> treat the axis as braking, the
+      // far more common rule of the two.
+      return t && t.value > 0 ? 'harsh-acceleration' : 'harsh-braking';
+    }
+    for (const [re, cat] of DIAGNOSTIC_PATTERNS) if (re.test(diagnosticId)) return cat;
+  }
+  return categorize(rule.id, rule.name);
+}
+
 /**
  * Which categories this database can actually measure.
  *
@@ -90,10 +136,72 @@ export function categorize(ruleId: string, ruleName: string): Category {
  *
  * `other` is always true: it is the catch-all bucket, not one specific rule.
  */
-export function configuredCategories(rules: { id: string; name: string }[]): Record<Category, boolean> {
+export function configuredCategories(rules: ClassifiableRule[]): Record<Category, boolean> {
   const out = Object.fromEntries(CATEGORIES.map((c) => [c, false])) as Record<Category, boolean>;
   out.other = true;
-  for (const r of rules) out[categorize(r.id, r.name)] = true;
+  for (const r of rules) out[categorizeRule(r)] = true;
+  return out;
+}
+
+export interface ViolationBreakdown {
+  ruleId: string;
+  ruleName: string;
+  category: Category;
+  count: number;
+  totalDurationSec: number;
+  lastAt: string;
+  thresholds: { diagnosticId: string | null; conditionType: string; value: number }[];
+}
+
+/**
+ * Per vehicle: WHICH rules it broke, how often, and the threshold each fires at.
+ *
+ * The ranking table only ever showed a total and a top category, so a fleet
+ * manager could see that a unit was worst without learning what it actually did.
+ * This is the data behind the expandable row.
+ *
+ * Sorted by count desc — the repeated offence is the coachable one. Rules that
+ * exist but were never broken do NOT appear: this is a list of what happened,
+ * not a catalogue.
+ *
+ * NOTE: no measured magnitude. ExceptionEvent carries only time, duration and
+ * distance — the actual G or km/h that triggered it is not stored anywhere in
+ * the event, so the threshold is the only number describing severity here.
+ */
+export function violationsByDevice(
+  events: ExceptionEventDTO[],
+  rules: ClassifiableRule[]
+): Record<string, ViolationBreakdown[]> {
+  const ruleById = new Map(rules.map((r) => [r.id, r]));
+  const byDevice: Record<string, Map<string, ViolationBreakdown>> = {};
+
+  for (const e of events) {
+    const perRule = (byDevice[e.deviceId] ??= new Map());
+    let row = perRule.get(e.ruleId);
+    if (!row) {
+      const rule = ruleById.get(e.ruleId);
+      row = {
+        ruleId: e.ruleId,
+        // Prefer the event's joined name, fall back to the Rule table, then the
+        // raw id — an unnamed rule is still a finding worth showing.
+        ruleName: e.ruleName || rule?.name || e.ruleId,
+        category: rule ? categorizeRule(rule) : categorize(e.ruleId, e.ruleName),
+        count: 0,
+        totalDurationSec: 0,
+        lastAt: e.start,
+        thresholds: rule?.thresholds ?? [],
+      };
+      perRule.set(e.ruleId, row);
+    }
+    row.count++;
+    row.totalDurationSec += Number.isFinite(e.durationSec) ? e.durationSec : 0;
+    if (Date.parse(e.start) > Date.parse(row.lastAt)) row.lastAt = e.start;
+  }
+
+  const out: Record<string, ViolationBreakdown[]> = {};
+  for (const [deviceId, perRule] of Object.entries(byDevice)) {
+    out[deviceId] = [...perRule.values()].sort((a, b) => b.count - a.count);
+  }
   return out;
 }
 
@@ -145,7 +253,17 @@ export function categoryBreakdown(events: ExceptionEventDTO[]): Record<Category,
 
 /** Worst category per unit, for the "kategori teratas" column. Ties break by
  *  CATEGORIES order, which is deterministic — not by Map insertion luck. */
-export function topCategoryByDevice(events: ExceptionEventDTO[]): Map<string, Category> {
+/**
+ * Pass `rules` whenever you have them: an event only carries a rule id and name,
+ * so without the Rule table this falls back to guessing from those — which is
+ * exactly what made every unit read "Lainnya" on a real database, where ids are
+ * opaque and names are free text. With rules, the diagnostic decides.
+ */
+export function topCategoryByDevice(
+  events: ExceptionEventDTO[],
+  rules: ClassifiableRule[] = []
+): Map<string, Category> {
+  const ruleById = new Map(rules.map((r) => [r.id, r]));
   const counts = new Map<string, Record<Category, number>>();
   for (const e of events) {
     let row = counts.get(e.deviceId);
@@ -153,13 +271,20 @@ export function topCategoryByDevice(events: ExceptionEventDTO[]): Map<string, Ca
       row = Object.fromEntries(CATEGORIES.map((c) => [c, 0])) as Record<Category, number>;
       counts.set(e.deviceId, row);
     }
-    row[categorize(e.ruleId, e.ruleName)]++;
+    const rule = ruleById.get(e.ruleId);
+    row[rule ? categorizeRule(rule) : categorize(e.ruleId, e.ruleName)]++;
   }
 
   const out = new Map<string, Category>();
   for (const [deviceId, row] of counts) {
-    let best: Category = 'other';
-    for (const c of CATEGORIES) if (row[c] > row[best]) best = c;
+    // Start from the first REAL category, not 'other': 'other' is the catch-all,
+    // and seeding with it lets a tie hand the label to "Lainnya" — which tells a
+    // fleet manager nothing about what the unit actually did.
+    let best: Category = CATEGORIES.find((c) => c !== 'other' && row[c] > 0) ?? 'other';
+    for (const c of CATEGORIES) {
+      if (c === 'other') continue;
+      if (row[c] > row[best]) best = c;
+    }
     out.set(deviceId, best);
   }
   return out;

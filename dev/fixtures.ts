@@ -207,14 +207,28 @@ export const rawDeviceStatusInfo = [
 // exercises the happy path, and the whole point of the coverage check is that a
 // missing rule must not look like zero violations. Same reasoning as omitting
 // DiagnosticOdometerId from the StatusData rows below.
+// `condition` is Geotab's hierarchical Condition tree: `value` is the threshold
+// the rule fires at, `diagnostic` is what it compares. Real rules nest the
+// comparison under AND/OR plumbing, so the fixtures nest too — a flat tree would
+// not prove the walker recurses.
+//
+// "SMA-07" is deliberately named nothing like braking and has an opaque id: it
+// is the case that made every unit read "Lainnya" on the real database, and it
+// can ONLY be classified from the diagnostic inside its condition.
+const cond = (diagnosticId: string, conditionType: string, value: number) => ({
+  conditionType: 'And',
+  children: [{ conditionType, value, diagnostic: { id: diagnosticId } }],
+});
+
 export const rawRules = [
-  { id: 'RuleHarshBrakingId', name: 'Pengereman Mendadak' },
-  { id: 'RuleHarshAccelerationId', name: 'Akselerasi Mendadak' },
-  { id: 'RuleHarshCorneringId', name: 'Menikung Tajam' },
-  { id: 'RuleSpeedingId', name: 'Melebihi Batas Kecepatan' },
-  { id: 'RuleIdlingId', name: 'Mesin Menyala Terlalu Lama' },
-  { id: 'b1A2', name: 'Masuk Zona Terlarang' },
-  { id: 'c3D4', name: 'Perawatan Terjadwal' },
+  { id: 'RuleHarshBrakingId', name: 'Pengereman Mendadak', baseType: 'Stock', condition: cond('DiagnosticAccelerationForwardBrakingId', 'ValueLessThan', -0.4) },
+  { id: 'RuleHarshAccelerationId', name: 'Akselerasi Mendadak', baseType: 'Stock', condition: cond('DiagnosticAccelerationForwardBrakingId', 'ValueMoreThan', 0.38) },
+  { id: 'RuleHarshCorneringId', name: 'Menikung Tajam', baseType: 'Stock', condition: cond('DiagnosticAccelerationSideToSideId', 'ValueMoreThan', 0.45) },
+  { id: 'RuleSpeedingId', name: 'Melebihi Batas Kecepatan', baseType: 'Stock', condition: cond('DiagnosticGoDeviceSpeedId', 'ValueMoreThan', 80) },
+  { id: 'RuleIdlingId', name: 'Mesin Menyala Terlalu Lama', baseType: 'Stock', condition: cond('DiagnosticIdleTimeId', 'ValueMoreThan', 300) },
+  { id: 'SMA-07', name: 'Peringatan Unit', baseType: 'Custom', condition: cond('DiagnosticAccelerationForwardBrakingId', 'ValueLessThan', -0.55) },
+  { id: 'b1A2', name: 'Masuk Zona Terlarang', baseType: 'Custom', condition: { conditionType: 'And', children: [] } },
+  { id: 'c3D4', name: 'Perawatan Terjadwal', baseType: 'Custom', condition: null },
 ];
 
 // Get ExceptionEvent returns `rule` as a BARE {id} — no name. Deriving severity
@@ -249,6 +263,13 @@ export const rawDiagnostics = [
   // lookup finds nothing on a non-English database.
   { id: 'DiagnosticDeviceTotalFuelId', name: 'Total fuel used', unitOfMeasure: { id: 'UnitOfMeasureLitersId' } },
   { id: 'DiagnosticEngineCoolantTemperatureId', name: 'Engine coolant temperature', unitOfMeasure: { id: 'UnitOfMeasureDegreesCelsiusId' } },
+  // Referenced by the safety Rules below. Without these the threshold line falls
+  // back to printing the raw diagnostic id — the fallback works, but a reader
+  // should see "Acceleration forward/braking < −0,40", not an identifier.
+  { id: 'DiagnosticAccelerationForwardBrakingId', name: 'Acceleration forward/braking', unitOfMeasure: { id: 'UnitOfMeasureGForceId' } },
+  { id: 'DiagnosticAccelerationSideToSideId', name: 'Acceleration side to side', unitOfMeasure: { id: 'UnitOfMeasureGForceId' } },
+  { id: 'DiagnosticGoDeviceSpeedId', name: 'Kecepatan kendaraan', unitOfMeasure: { id: 'UnitOfMeasureKilometersPerHourId' } },
+  { id: 'DiagnosticIdleTimeId', name: 'Durasi idle', unitOfMeasure: { id: 'UnitOfMeasureSecondsId' } },
 ];
 
 // StatusData: sampled every 6h over the last 7 days, per device.
