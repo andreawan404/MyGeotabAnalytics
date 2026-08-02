@@ -7,7 +7,8 @@ import { fetchExceptionEvents } from '../api/fetchers/exception-event';
 import { fetchDevices } from '../api/fetchers/device';
 import { defaultDateRange, toUtcRange } from '../utils/date-range';
 import type { TripDTO, ExceptionEventDTO, FilterChangeDetail } from '../api/fetchers/types';
-import { esc, clamp, fin, int, one, durationHm } from '../utils/format';
+import { clamp, fin, int, one, durationHm } from '../utils/format';
+import { renderExplainCard, type KpiExplanation } from './kpi-explain';
 
 export interface KpiTotals {
   utilizationPct: number;
@@ -62,14 +63,9 @@ export function computeKpis(
 // the 5,0 came from. These strings are DATA, not markup, so the check file can
 // assert the arithmetic without a DOM.
 
-export type KpiKind = 'terukur' | 'heuristik' | 'estimasi';
-
-export interface KpiExplanation {
-  formula: string;
-  substituted: string;
-  source: string;
-  kind: KpiKind;
-}
+// Bentuk penjelasan dan render kartunya kini dipakai bersama enam view lain —
+// lihat kpi-explain.ts. Di-re-export supaya pemanggil lama tidak perlu diubah.
+export type { KpiKind, KpiExplanation } from './kpi-explain';
 
 export type KpiExplainKey = 'utilization' | 'idle' | 'engineHours' | 'exceptions';
 
@@ -159,51 +155,17 @@ function saveWorkingHours(database: string, working: WorkingHours): void {
   }
 }
 
-const KIND_LABEL: Record<KpiKind, string> = {
-  terukur: 'TERUKUR',
-  heuristik: 'HEURISTIK',
-  estimasi: 'ESTIMASI',
-};
-
-// The terukur/heuristik/estimasi distinction must survive without colour.
-const KIND_NOTE: Record<KpiKind, string> = {
-  terukur: 'Terukur — dijumlahkan langsung dari data MyGeotab, tanpa asumsi.',
-  heuristik: 'Heuristik — sebagian angka berasal dari asumsi yang Anda isi sendiri, bukan dari MyGeotab.',
-  estimasi: 'Estimasi — dihitung tidak langsung dari data lain, jadi bukan angka resmi.',
-};
-
 /** One card. `extra` carries the working-hours inputs on the utilisation card. */
 function renderKpiCard(
   key: KpiExplainKey,
   label: string,
   valueHtml: string,
   caption: string,
-  exp: KpiExplanation,
+  explain: KpiExplanation,
   open: boolean,
   extra = ''
 ): string {
-  const btnId = `fa-kpi-why-btn-${key}`;
-  const panelId = `fa-kpi-why-panel-${key}`;
-  return `
-    <div class="fa-kpi-card">
-      <div class="fa-kpi-label">${esc(label)}</div>
-      <div class="fa-kpi-value">${valueHtml}</div>
-      <p class="fa-kpi-source">
-        <span class="fa-kpi-kind fa-kpi-kind-${exp.kind}">${KIND_LABEL[exp.kind]}</span>
-        ${esc(caption)}
-      </p>
-      ${extra}
-      <button type="button" class="fa-kpi-why" id="${btnId}" data-why="${key}"
-              aria-expanded="${open}" aria-controls="${panelId}">Bagaimana ini dihitung?</button>
-      <div class="fa-kpi-detail" id="${panelId}" role="region" aria-labelledby="${btnId}"${open ? '' : ' hidden'}>
-        <dl class="fa-kpi-detail-list">
-          <dt>Rumus</dt><dd>${esc(exp.formula)}</dd>
-          <dt>Angka yang dipakai</dt><dd>${esc(exp.substituted)}</dd>
-          <dt>Sumber data</dt><dd>${esc(exp.source)}</dd>
-          <dt>Tingkat keyakinan</dt><dd>${esc(KIND_NOTE[exp.kind])}</dd>
-        </dl>
-      </div>
-    </div>`;
+  return renderExplainCard({ key, label, valueHtml, caption, explain, open, extra });
 }
 
 export function initKpiCards(container: HTMLElement, ctx: { database: string; rootEl: HTMLElement }): () => void {

@@ -281,12 +281,33 @@
   color: var(--fa-danger);
 }
 
+/* Catatan cakupan: kontrol mana yang TIDAK berlaku di halaman yang sedang
+   dibuka. Bukan error, jadi bukan warna bahaya — ini keterangan permanen. */
+.fa-filter-scope {
+  flex: 0 0 100%;
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--fa-muted);
+}
+
 .fa-field {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   font-size: 0.8rem;
   color: #4b5563;
+}
+
+/* Kontrol yang tidak dipakai halaman ini. Diredupkan DAN di-disable — kalau
+   hanya diredupkan, user tetap mencobanya dan mengira datanya yang salah. */
+.fa-field-inactive {
+  opacity: 0.55;
+}
+
+.fa-field select:disabled {
+  background: var(--fa-bg);
+  cursor: not-allowed;
 }
 
 .fa-field input,
@@ -487,6 +508,32 @@
 .fa-kpi-kind-estimasi {
   background: var(--fa-med-bg);
   color: var(--fa-med-fg);
+}
+
+/* Chip yang bisa diklik ke glosarium. Sebelumnya tiga halaman memakai tiga gaya
+   chip berbeda (fa-pm-chip-*, fa-fuel-tag, fa-kpi-kind-*) untuk arti yang persis
+   sama, dan hanya satu halaman yang pernah menjelaskan artinya. */
+.fa-kpi-kind-btn {
+  border: 0;
+  font-family: inherit;
+  text-transform: uppercase;
+  cursor: help;
+}
+
+.fa-kpi-kind-btn:hover,
+.fa-kpi-kind-btn:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+/* Nama flag dicetak sebagai teks di bawah angkanya, bukan tooltip title=:
+   tooltip hover-only tidak terjangkau di layar sentuh maupun pembaca layar. */
+.fa-pm-flagnames {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--fa-muted);
 }
 
 .fa-kpi-why {

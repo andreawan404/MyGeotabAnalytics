@@ -11,6 +11,7 @@ import { fetchGroups } from '../api/fetchers/group';
 import { fetchZones } from '../api/fetchers/zone';
 import type { FilterChangeDetail } from '../api/fetchers/types';
 import { defaultDateRange, presetRange, type PresetId } from '../utils/date-range';
+import { VIEWS } from '../views/registry';
 
 /** Bursts of `change` events (datetime spinners, a fast group+zone edit) would
  *  each fan out to every mounted view. One emit per settled edit is enough. */
@@ -57,10 +58,11 @@ export function initFilterBar(container: HTMLElement, ctx: { database: string; r
     <label class="fa-field">Grup
       <select id="fa-group"><option value="">Semua grup</option></select>
     </label>
-    <label class="fa-field">Zona
+    <label class="fa-field" id="fa-zone-field">Zona
       <select id="fa-zone"><option value="">Semua zona</option></select>
     </label>
     <p class="fa-filter-hint" role="status" hidden></p>
+    <p class="fa-filter-scope" hidden></p>
   `;
 
   const presetsEl = container.querySelector<HTMLElement>('.fa-presets')!;
@@ -69,6 +71,8 @@ export function initFilterBar(container: HTMLElement, ctx: { database: string; r
   const dateToEl = container.querySelector<HTMLInputElement>('#fa-date-to')!;
   const groupEl = container.querySelector<HTMLSelectElement>('#fa-group')!;
   const zoneEl = container.querySelector<HTMLSelectElement>('#fa-zone')!;
+  const zoneFieldEl = container.querySelector<HTMLElement>('#fa-zone-field')!;
+  const scopeEl = container.querySelector<HTMLElement>('.fa-filter-scope')!;
 
   fetchGroups({ database: ctx.database })
     .then((groups) => appendOptions(groupEl, groups))
@@ -152,9 +156,49 @@ export function initFilterBar(container: HTMLElement, ctx: { database: string; r
     emitNow();
   }
 
+  // --- kejujuran cakupan ---------------------------------------------------
+  //
+  // Filter bar ini dipakai bersama oleh tujuh view yang TIDAK sama cakupannya.
+  // Dropdown Zona hanya dibaca view Keamanan; enam view lain mengabaikannya
+  // tanpa memberi tanda apa pun, jadi user yang memilih zona lalu melihat
+  // angkanya tidak berubah akan menyimpulkan datanya yang salah. Prediksi
+  // Servis juga selalu memakai 90 hari terakhir, bukan tanggal mulai di atas.
+  //
+  // Diperbaiki di satu tempat lewat flag di registry, bukan di tujuh view.
+  function applyScope(viewId: string): void {
+    const view = VIEWS.find((v) => v.id === viewId);
+    const zoneUsed = view?.usesZone === true;
+
+    zoneEl.disabled = !zoneUsed;
+    zoneFieldEl.classList.toggle('fa-field-inactive', !zoneUsed);
+    // Zona yang tersisa terpilih saat pindah ke view yang tidak memakainya akan
+    // ikut terkirim di detail event dan menyesatkan. Bersihkan, lalu emit.
+    if (!zoneUsed && zoneEl.value) {
+      zoneEl.value = '';
+      emitChange();
+    }
+
+    const notes: string[] = [];
+    if (!zoneUsed) {
+      const owner = VIEWS.find((v) => v.usesZone)?.label ?? 'Keamanan';
+      notes.push(`Filter Zona hanya dipakai halaman ${owner} — di halaman ini tidak berpengaruh.`);
+    }
+    if (view?.ignoresDateFrom) notes.push(view.ignoresDateFrom);
+
+    scopeEl.textContent = notes.join(' ');
+    scopeEl.hidden = notes.length === 0;
+  }
+
+  function onViewChange(ev: Event): void {
+    applyScope((ev as CustomEvent<{ viewId: string }>).detail.viewId);
+  }
+
   const controls = [dateFromEl, dateToEl, groupEl, zoneEl];
   controls.forEach((el) => el.addEventListener('change', onManualChange));
   presetsEl.addEventListener('click', onPresetClick);
+  ctx.rootEl.addEventListener('dashboard:view-change', onViewChange);
+  // view-host memasang view pertama tanpa memancarkan dashboard:view-change.
+  applyScope(VIEWS[0].id);
 
   // Populate lastFilter immediately (undebounced) so a view mounting in this
   // same tick already sees the real filter rather than falling back to defaults.
@@ -165,6 +209,7 @@ export function initFilterBar(container: HTMLElement, ctx: { database: string; r
     clearTimeout(hintTimer);
     controls.forEach((el) => el.removeEventListener('change', onManualChange));
     presetsEl.removeEventListener('click', onPresetClick);
+    ctx.rootEl.removeEventListener('dashboard:view-change', onViewChange);
   };
 }
 

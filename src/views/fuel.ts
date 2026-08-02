@@ -25,6 +25,36 @@ import { toUtcRange } from '../utils/date-range';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
 import { esc, clamp, token, int, one, upto1 } from '../utils/format';
+import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
+import { openGlossary } from '../components/glossary';
+
+// Dari mana liternya datang. Empat sumber, akurasi jauh berbeda — dan halaman
+// ini tidak boleh terdengar sama yakinnya untuk keempatnya.
+const SOURCE_FORMULA: Record<FuelSource, string> = {
+  transactions: 'Σ volume seluruh transaksi kartu BBM pada rentang ini',
+  cumulative: 'Σ kenaikan counter "total fuel used" pada ECU antar pembacaan',
+  level: 'Σ penurunan level tangki × kapasitas tangki ÷ 100',
+  distance: 'Σ jarak (km) × rasio L/100km yang Anda isi ÷ 100',
+  none: 'Tidak ada yang bisa dihitung',
+};
+
+const SOURCE_DETAIL: Record<FuelSource, string> = {
+  transactions:
+    'FuelTransaction (MyGeotab). Sumber paling akurat: volume dan biaya nyata dari pengisian, bukan hasil hitungan. ' +
+    'Perhatikan bahwa waktu pengisian tidak sama dengan waktu pemakaian — BBM yang diisi hari ini bisa dipakai minggu depan.',
+  cumulative:
+    'StatusData "total fuel used" dari ECU (MyGeotab). Hanya kenaikan yang dijumlah; penurunan diabaikan karena ' +
+    'itu berarti counter di-reset, bukan BBM yang kembali ke tangki.',
+  level:
+    'StatusData level tangki (MyGeotab). Hanya PENURUNAN level yang dijumlah — pengisian ulang sengaja diabaikan. ' +
+    'Kalau level dilaporkan dalam persen, konversinya memakai kapasitas tangki yang Anda isi di bawah, dan kapasitas ' +
+    'itu diterapkan sama rata ke semua unit walau tangkinya sebenarnya berbeda-beda.',
+  distance:
+    'Trip.distance (MyGeotab) × rasio yang ANDA isi. Database ini tidak melaporkan data bahan bakar apa pun, jadi ' +
+    'angka di halaman ini BUKAN hasil pengukuran — ia hanya jarak yang dikalikan sebuah tebakan. Semua unit akan ' +
+    'terlihat sama efisien, karena memang begitulah cara angkanya dibuat.',
+  none: 'Tidak ada sumber bahan bakar maupun jarak tempuh pada rentang ini.',
+};
 import type { ViewCtx } from './registry';
 import type {
   FilterChangeDetail,
@@ -110,6 +140,22 @@ interface Snapshot {
 export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
   let settings = loadSettings(ctx.database);
   let snapshot: Snapshot | null = null;
+
+  // Panel penjelasan yang terbuka bertahan melewati render ulang: mengubah rasio
+  // BBM tidak boleh membanting tutup panel yang menjelaskan rasio itu.
+  const { open: openPanels, stop: stopExplain } = bindExplainToggles(container);
+
+  /** `note` boleh membawa markup (tag sumber), jadi tidak di-escape. */
+  const card = (key: string, label: string, valueHtml: string, note: string, explain: KpiExplanation): string =>
+    renderExplainCard({
+      key,
+      label,
+      valueHtml,
+      caption: '',
+      explain,
+      open: openPanels.has(key),
+      extra: note ? `<div class="fa-kpi-note">${note}</div>` : '',
+    });
   let barChart: Chart | null = null;
   let trendChart: Chart | null = null;
   // A slow load must never overwrite a newer one (fast date-picker edits).
@@ -258,39 +304,78 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
     setHtml(`
       ${renderBanner(snap, settings)}
       <div class="fa-kpi-row">
-        <div class="fa-kpi-card">
-          <div class="fa-kpi-label">Total BBM (L)</div>
-          <div class="fa-kpi-value">${fmt(totalL)}</div>
-        </div>
-        <div class="fa-kpi-card">
-          <div class="fa-kpi-label">Rata-rata L/100km</div>
-          <div class="fa-kpi-value">${avg === null ? '—' : fmt(avg)}</div>
-          ${totalKm > 0 ? `<div class="fa-kpi-note">${fmt(totalKm, 0)} km total</div>` : ''}
-        </div>
-        <div class="fa-kpi-card">
-          <div class="fa-kpi-label">Efisiensi BBM (km/L)</div>
-          <div class="fa-kpi-value">${fleetEconomy === null ? '—' : fmt(fleetEconomy, 2)}</div>
-          <div class="fa-kpi-note">${
-            blocked
-              ? blocked
-              : `${sourceTag(isEstimateSource(snap.source))} ${fmt(totalKm, 0)} km ÷ ${fmt(totalL)} L`
-          }</div>
-        </div>
+        ${card('fu-total', 'Total BBM (L)', fmt(totalL), '', {
+          formula: SOURCE_FORMULA[snap.source],
+          substituted: `${fmt(totalL)} L pada rentang ini, dari ${fmt(totalKm, 0)} km jarak tempuh`,
+          source: SOURCE_DETAIL[snap.source],
+          kind: isEstimateSource(snap.source) ? 'estimasi' : 'terukur',
+        })}
+        ${card(
+          'fu-avg',
+          'Rata-rata L/100km',
+          avg === null ? '—' : fmt(avg),
+          totalKm > 0 ? `${fmt(totalKm, 0)} km total` : '',
+          {
+            formula: 'Σ liter ÷ Σ km × 100',
+            substituted:
+              avg === null
+                ? 'Belum bisa dihitung: jarak tempuh armada 0 km pada rentang ini'
+                : `${fmt(totalL)} L ÷ ${fmt(totalKm, 0)} km × 100 = ${fmt(avg)} L/100km`,
+            source:
+              'Trip.distance (MyGeotab) + liter dari sumber di banner atas. Seluruh armada dijumlah dulu baru ' +
+              'dibagi — ini BUKAN rata-rata dari angka per unit, jadi unit yang paling banyak jalan berbobot ' +
+              'lebih besar. Untuk membandingkan antar unit, pakai kolom L/100km di tabel bawah.',
+            kind: isEstimateSource(snap.source) ? 'estimasi' : 'terukur',
+          }
+        )}
+        ${card(
+          'fu-economy',
+          'Efisiensi BBM (km/L)',
+          fleetEconomy === null ? '—' : fmt(fleetEconomy, 2),
+          blocked ? blocked : `${sourceTag(isEstimateSource(snap.source))} ${fmt(totalKm, 0)} km ÷ ${fmt(totalL)} L`,
+          {
+            formula: 'Σ km ÷ Σ liter',
+            substituted:
+              fleetEconomy === null
+                ? blocked || 'Belum bisa dihitung pada rentang ini'
+                : `${fmt(totalKm, 0)} km ÷ ${fmt(totalL)} L = ${fmt(fleetEconomy, 2)} km/L`,
+            source:
+              'Kebalikan dari L/100km, disediakan karena banyak armada di Indonesia terbiasa berpikir dalam km/L. ' +
+              'Kalau sumbernya estimasi jarak, kolom ini sengaja dikosongkan: litermya dihitung DARI jarak, jadi ' +
+              'km/L akan sama persis untuk semua unit dan tidak memberi informasi apa pun.',
+            kind: isEstimateSource(snap.source) ? 'estimasi' : 'terukur',
+          }
+        )}
         ${
           // Omitted entirely when there is no cost data — a "Rp 0" card reads as
           // "fuel was free", which is worse than no card at all.
           totalCost === null
             ? ''
-            : `<div class="fa-kpi-card">
-                 <div class="fa-kpi-label">Biaya</div>
-                 <div class="fa-kpi-value">${currency} ${fmt(totalCost, 0)}</div>
-               </div>`
+            : card('fu-cost', 'Biaya', `${currency} ${fmt(totalCost, 0)}`, '', {
+                formula: 'Σ biaya seluruh transaksi kartu BBM pada rentang ini',
+                substituted: `${currency} ${fmt(totalCost, 0)} dari ${fmt(snap.transactions.length, 0)} transaksi`,
+                source:
+                  'FuelTransaction (MyGeotab) — angka rupiah yang benar-benar dibayar, bukan liter dikali harga ' +
+                  'asumsi. Hanya muncul kalau database ini punya data kartu BBM.',
+                kind: 'terukur',
+              })
         }
-        <div class="fa-kpi-card">
-          <div class="fa-kpi-label">Estimasi Boros Idle (L)</div>
-          <div class="fa-kpi-value">${fmt(sumValues(idle))}</div>
-          <div class="fa-kpi-note">Heuristik: jam idle × ${fmt(settings.litresPerIdleHour)} L/jam</div>
-        </div>
+        ${card(
+          'fu-idle',
+          'Estimasi Boros Idle (L)',
+          fmt(sumValues(idle)),
+          `Heuristik: jam idle × ${fmt(settings.litresPerIdleHour)} L/jam`,
+          {
+            formula: 'Σ jam idle × konsumsi idle (L/jam) yang Anda isi',
+            substituted: `${fmt(sumValues(idle))} L, memakai ${fmt(settings.litresPerIdleHour)} L/jam`,
+            source:
+              'Trip.idlingDuration (MyGeotab) — jam idle-nya terukur, tapi laju konsumsinya TIDAK: MyGeotab tidak ' +
+              'melaporkan berapa liter yang terbakar saat idle. Angka L/jam berasal dari isian Anda di bawah, ' +
+              'dan berbeda jauh antar jenis kendaraan (van kota ±1,5; alat berat bisa 4 atau lebih). Ubah isian ' +
+              'itu dan angka ini ikut berubah — jangan dipakai untuk menagih tanpa memverifikasi lajunya dulu.',
+            kind: 'heuristik',
+          }
+        )}
       </div>
 
       ${renderControls(snap, settings)}
@@ -421,6 +506,12 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
   };
   ctx.rootEl.addEventListener('dashboard:profile-change', onProfileChange);
 
+  const onTermClick = (e: Event): void => {
+    const term = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-term]')?.dataset.term;
+    if (term) openGlossary(term);
+  };
+  container.addEventListener('click', onTermClick);
+
   const stopFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   void load(getCurrentFilter());
 
@@ -429,6 +520,8 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
     stopFilter();
     ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     ctx.rootEl.removeEventListener('dashboard:view-shown', onShown);
+    container.removeEventListener('click', onTermClick);
+    stopExplain();
     destroyCharts();
   };
 }
@@ -565,8 +658,13 @@ function renderBanner(snap: Snapshot, cfg: Settings): string {
 /** The TERUKUR/ESTIMASI pill. Shared by the banner and the km/L card so the
  *  new card speaks the view's existing visual language instead of a second
  *  one. fuel.css sizes it up inside an estimate banner. */
+/** Chip keyakinan yang sama dengan seluruh dashboard, dan bisa diklik ke
+ *  glosarium — sebelumnya halaman ini punya gaya sendiri (fa-fuel-tag) dan
+ *  tidak ada tempat mana pun yang menjelaskan bedanya terukur dan estimasi. */
 function sourceTag(isEstimate: boolean): string {
-  return `<span class="fa-fuel-tag${isEstimate ? ' is-estimate' : ''}">${isEstimate ? 'ESTIMASI' : 'TERUKUR'}</span>`;
+  const kind = isEstimate ? 'estimasi' : 'terukur';
+  return `<button type="button" class="fa-kpi-kind fa-kpi-kind-${kind} fa-kpi-kind-btn" data-term="${kind}"
+    aria-label="Apa arti ${kind}?">${kind === 'estimasi' ? 'ESTIMASI' : 'TERUKUR'}</button>`;
 }
 
 function banner(isEstimate: boolean, headline: string, detail: string): string {

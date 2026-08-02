@@ -24,7 +24,9 @@ import { fetchTrips } from '../api/fetchers/trip';
 import { fetchRules } from '../api/fetchers/rule';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
-import { esc, clamp } from '../utils/format';
+import { esc, clamp, int } from '../utils/format';
+import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
+import { openGlossary } from '../components/glossary';
 import { toUtcRange } from '../utils/date-range';
 import { DEFAULT_WORKING_HOURS } from '../components/kpi-card';
 import {
@@ -222,32 +224,77 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
     container.innerHTML = `
       <div class="fa-kpi-row">
         ${kpiCard(
+          'sec-panic',
           'Panik / SOS',
           totals.panic,
           ruleCategories.has('panic') ? 'Dari aturan panic/SOS di database ini' : '',
-          ruleCategories.has('panic') ? '' : 'Tombol panik belum dikonfigurasi di database ini'
+          ruleCategories.has('panic') ? '' : 'Tombol panik belum dikonfigurasi di database ini',
+          {
+            formula: 'Jumlah ExceptionEvent dari Rule yang namanya mengandung panic / SOS / emergency',
+            substituted: `${int(totals.panic)} kejadian pada rentang ini`,
+            source:
+              'ExceptionEvent + Rule (MyGeotab). Kategori ditentukan dengan mencocokkan NAMA aturan, karena tidak ' +
+              'ada tipe khusus untuk panic di MyGeotab. Aturan panik dengan nama tidak lazim tidak akan terdeteksi ' +
+              'di sini — periksa penamaan Rule Anda kalau angkanya terasa terlalu kecil.',
+            kind: 'terukur',
+          }
         )}
         ${kpiCard(
+          'sec-accident',
           'Kecelakaan / Benturan',
           totals.accident,
           ruleCategories.has('accident') ? 'Dari aturan deteksi benturan' : '',
-          ruleCategories.has('accident') ? '' : 'Aturan deteksi kecelakaan belum dikonfigurasi di database ini'
+          ruleCategories.has('accident') ? '' : 'Aturan deteksi kecelakaan belum dikonfigurasi di database ini',
+          {
+            formula: 'Jumlah ExceptionEvent dari Rule yang namanya mengandung accident / collision / impact / crash',
+            substituted: `${int(totals.accident)} kejadian pada rentang ini`,
+            source:
+              'ExceptionEvent + Rule (MyGeotab). Sama seperti panik: pencocokan berdasarkan nama aturan. ' +
+              'Aturan benturan biasanya dipicu ambang akselerometer yang Anda setel sendiri di MyGeotab, jadi ' +
+              'satu kejadian di sini belum tentu kecelakaan — bisa juga polisi tidur yang dilewati terlalu cepat.',
+            kind: 'terukur',
+          }
         )}
         ${kpiCard(
+          'sec-offhours',
           'Pergerakan Tak Sah',
           offHoursTrips.length,
           `Trip mulai di luar ${shiftLabel}
            <label>Mulai <input type="number" id="fa-sec-start" min="0" max="23" value="${hours.startHour}"></label>
            <label>Durasi (jam) <input type="number" id="fa-sec-hours" min="1" max="24" value="${hours.hoursPerDay}"></label>`,
-          trips.length ? '' : 'Tidak ada data trip pada rentang tanggal ini'
+          trips.length ? '' : 'Tidak ada data trip pada rentang tanggal ini',
+          {
+            formula: `Jumlah Trip yang jam mulainya (waktu lokal) berada di luar jendela ${shiftLabel}`,
+            substituted:
+              hours.hoursPerDay >= 24
+                ? `${int(offHoursTrips.length)} dari ${int(trips.length)} trip. Shift disetel 24 jam, jadi tidak ada jam yang bisa disebut di luar jam kerja — angka ini akan selalu 0. Itu benar untuk operasi 24/7; persempit durasinya kalau site Anda punya jam tutup.`
+                : `${int(offHoursTrips.length)} dari ${int(trips.length)} trip mulai di luar ${shiftLabel}`,
+            source:
+              'Trip.start (MyGeotab), dibandingkan dengan jam shift yang ANDA isi di kartu ini — bukan dari ' +
+              'MyGeotab. Ini murni perbandingan jam, BUKAN deteksi pencurian: lembur yang sah, jemput muatan ' +
+              'dini hari, dan sopir yang pulang telat semuanya akan muncul di sini.',
+            kind: 'heuristik',
+          }
         )}
         ${kpiCard(
+          'sec-geofence',
           'Pelanggaran Geofence',
           totals.geofence,
           geofenceNote(ruleCategories.has('geofence'), zones.length, selectedZone, breaches.length),
           ruleCategories.has('geofence') || zones.length
             ? ''
-            : 'Belum ada zona/geofence maupun aturannya di database ini'
+            : 'Belum ada zona/geofence maupun aturannya di database ini',
+          {
+            formula: 'Jumlah ExceptionEvent dari Rule zona/geofence',
+            substituted: selectedZone
+              ? `${int(totals.geofence)} dari aturan zona, ditambah ${int(breaches.length)} trip yang mulai atau berakhir di dalam zona "${selectedZone.name}" (dihitung langsung dari titik trip, bukan dari aturan)`
+              : `${int(totals.geofence)} kejadian dari aturan zona. Pilih satu zona di filter untuk melihat perhitungan langsung dari titik awal/akhir trip.`,
+            source:
+              'ExceptionEvent + Rule + Zone (MyGeotab). Perhitungan langsung memakai uji titik-dalam-poligon pada ' +
+              'titik awal dan akhir trip — zona tanpa poligon tidak bisa dihitung. Trip yang hanya MELINTAS zona ' +
+              'tanpa berhenti tidak terdeteksi cara ini, karena hanya kedua ujungnya yang diperiksa.',
+            kind: 'terukur',
+          }
         )}
       </div>
 
@@ -265,13 +312,45 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
     `;
   }
 
-  function kpiCard(label: string, value: number, note: string, disabledReason: string): string {
-    const body = disabledReason
-      ? `<div class="fa-kpi-value">—</div><div class="fa-kpi-note fa-sec-reason">${esc(disabledReason)}</div>`
-      : `<div class="fa-kpi-value">${value}</div>${note ? `<div class="fa-kpi-note">${note}</div>` : ''}`;
-    return `<div class="fa-kpi-card${disabledReason ? ' fa-sec-off' : ''}">
-      <div class="fa-kpi-label">${esc(label)}</div>${body}
-    </div>`;
+  /**
+   * Kategori yang belum dikonfigurasi tetap tampil abu-abu dengan alasannya —
+   * dan TIDAK mendapat panel "Bagaimana ini dihitung?", karena tidak ada yang
+   * dihitung. "0" pada kategori yang aturannya tidak pernah dibuat tidak bisa
+   * dibedakan dari "fitur ini tidak pernah dinyalakan"; itulah kenapa nilainya
+   * "—", bukan nol.
+   */
+  function kpiCard(
+    key: string,
+    label: string,
+    value: number,
+    note: string,
+    disabledReason: string,
+    explain?: KpiExplanation
+  ): string {
+    if (disabledReason) {
+      return `<div class="fa-kpi-card fa-sec-off">
+        <div class="fa-kpi-label">${esc(label)}</div>
+        <div class="fa-kpi-value">—</div>
+        <div class="fa-kpi-note fa-sec-reason">${esc(disabledReason)}</div>
+      </div>`;
+    }
+    if (!explain) {
+      return `<div class="fa-kpi-card">
+        <div class="fa-kpi-label">${esc(label)}</div>
+        <div class="fa-kpi-value">${int(value)}</div>
+        ${note ? `<div class="fa-kpi-note">${note}</div>` : ''}
+      </div>`;
+    }
+    return renderExplainCard({
+      key,
+      label,
+      valueHtml: int(value),
+      caption: '',
+      explain,
+      open: openPanels.has(key),
+      // `note` membawa markup milik kartu (input shift), jadi tidak boleh di-escape.
+      extra: note ? `<div class="fa-kpi-note">${note}</div>` : '',
+    });
   }
 
   function geofenceNote(hasRule: boolean, zoneCount: number, zone: ZoneDTO | undefined, breachCount: number): string {
@@ -439,6 +518,16 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
 
   // Profil Operasi menulis knob ini ke localStorage lalu menyiarkan event ini.
   // Baca ulang dan render dari data yang sudah ada — tidak ada fetch baru.
+  // Panel penjelasan yang terbuka bertahan melewati render ulang: mengubah jam
+  // shift tidak boleh membanting tutup panel yang menjelaskan jam shift itu.
+  const { open: openPanels, stop: stopExplain } = bindExplainToggles(container);
+
+  const onTermClick = (e: Event): void => {
+    const term = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-term]')?.dataset.term;
+    if (term) openGlossary(term);
+  };
+  container.addEventListener('click', onTermClick);
+
   const onProfileChange = (): void => {
     hours = normalizeHours(readJson<SecurityHours>(HOURS_KEY + ctx.database, defaultHours()));
     render();
@@ -454,6 +543,8 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
     offFilter();
     ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     container.removeEventListener('change', onChange);
+    container.removeEventListener('click', onTermClick);
+    stopExplain();
     container.innerHTML = ''; // discards every rendered input with its node
   };
 }

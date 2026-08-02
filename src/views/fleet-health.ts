@@ -13,7 +13,9 @@ import { toUtcRange } from '../utils/date-range';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
 import type { ViewCtx } from './registry';
-import { esc } from '../utils/format';
+import { esc, int, one } from '../utils/format';
+import { renderExplainCard, bindExplainToggles } from '../components/kpi-explain';
+import { openGlossary } from '../components/glossary';
 import {
   activeFaults,
   healthSummary,
@@ -49,6 +51,10 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
   const faultsEl = panel('faults');
   const usageEl = panel('usage');
 
+  // Panel penjelasan yang terbuka bertahan melewati render ulang — ganti filter
+  // tidak boleh membanting tutup penjelasan yang sedang dibaca.
+  const { open: openPanels, stop: stopExplain } = bindExplainToggles(container);
+
   let latestTop: FaultCodeTally[] = [];
   // Every async continuation checks this: a filter change (or teardown) while a
   // fetch is in flight must not let the stale response paint over the new one.
@@ -82,7 +88,10 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
       if (faults.length === 0) {
         // KPIs stay hidden deliberately: "0 dari 42 unit bermasalah" would read as
         // a clean bill of health when the real answer is "we received nothing".
-        faultsEl.innerHTML = `<p class="fa-empty">Tidak ada data fault engine pada rentang ini — perangkat perlu koneksi OBD/J1939 dan kendaraan yang melaporkan DTC.</p>`;
+        faultsEl.innerHTML =
+          `<p class="fa-empty">Tidak ada data fault engine pada rentang ini — perangkat perlu koneksi ` +
+          `<button type="button" class="fa-term-link" data-term="obd">OBD/J1939</button> dan kendaraan yang melaporkan ` +
+          `<button type="button" class="fa-term-link" data-term="dtc">DTC</button>. Kosong di sini bukan berarti armada sehat.</p>`;
       } else {
         const active = activeFaults(faults);
         renderKpis(healthSummary(faults, devices));
@@ -108,24 +117,93 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
   // Active / Pending / resolved are disjoint and sum to the row count — the three
   // counts come from healthSummary rather than being re-derived here, so no card
   // can drift out of step with the others.
+  // Setiap kartu membawa panel "Bagaimana ini dihitung?". Yang paling penting
+  // dibuka di sini adalah dua keputusan yang sebelumnya hanya hidup sebagai
+  // komentar kode: lampu kuning SENGAJA tidak dihitung kritis, dan Pending
+  // SENGAJA tidak dihitung aktif. Keduanya mengubah angka secara besar, jadi
+  // user berhak menolaknya kalau tidak setuju.
   function renderKpis(s: ReturnType<typeof healthSummary>): void {
     kpiEl.hidden = false;
-    kpiEl.innerHTML = `
-      ${kpiCard('Unit Bermasalah', `${s.devicesWithActiveFaults} dari ${s.totalDevices}`, `${s.pctAffected.toFixed(1)}% armada`)}
-      ${kpiCard('Lampu Kritis (MIL)', String(s.criticalLampCount), 'Fault aktif dengan lampu MIL / stop merah')}
-      ${kpiCard('Fault Aktif', String(s.activeCount), 'Terkonfirmasi ECU, belum ditangani')}
-      ${kpiCard('Perlu Dipantau', String(s.pendingCount), 'Pending — terdeteksi, belum dikonfirmasi ECU')}
-      ${kpiCard('Fault Ditolak/Selesai', String(s.resolvedCount), 'Sudah dismiss atau sudah hilang sendiri')}
-    `;
-  }
-
-  function kpiCard(label: string, value: string, note: string): string {
-    return `
-      <div class="fa-kpi-card">
-        <div class="fa-kpi-label">${esc(label)}</div>
-        <div class="fa-kpi-value">${esc(value)}</div>
-        <div class="fa-kpi-note">${esc(note)}</div>
-      </div>`;
+    kpiEl.innerHTML = [
+      renderExplainCard({
+        key: 'fh-affected',
+        label: 'Unit Bermasalah',
+        valueHtml: `${int(s.devicesWithActiveFaults)} dari ${int(s.totalDevices)}`,
+        caption: 'Unit dengan minimal satu fault aktif yang belum di-dismiss',
+        explain: {
+          formula: 'Jumlah unit berbeda yang punya ≥1 fault aktif ÷ jumlah unit di filter × 100',
+          substituted: `${int(s.devicesWithActiveFaults)} unit ÷ ${int(s.totalDevices)} unit × 100 = ${one(s.pctAffected)}%`,
+          source:
+            'FaultData + Device (MyGeotab). Satu unit dihitung sekali walau melapor puluhan fault. ' +
+            'Yang sudah di-dismiss teknisi dan yang sudah hilang sendiri tidak masuk hitungan.',
+          kind: 'terukur',
+        },
+        open: openPanels.has('fh-affected'),
+      }),
+      renderExplainCard({
+        key: 'fh-lamp',
+        label: 'Lampu Kritis (MIL)',
+        valueHtml: int(s.criticalLampCount),
+        caption: 'Fault aktif yang menyalakan lampu MIL / stop merah',
+        explain: {
+          formula: 'Jumlah fault aktif yang status lampunya cocok dengan malfunction / red stop / stop',
+          substituted: `${int(s.criticalLampCount)} dari ${int(s.activeCount)} fault aktif`,
+          source:
+            'FaultData.faultLampState (MyGeotab). Lampu kuning/amber SENGAJA tidak dihitung: lampu itu sifatnya ' +
+            'anjuran, dan di armada mana pun yang punya satu sensor emisi macet, memasukkan amber membuat KPI ini ' +
+            'merah terus sehingga tidak berguna. Buka tabel di bawah untuk melihat seluruh fault per unit.',
+          kind: 'terukur',
+        },
+        open: openPanels.has('fh-lamp'),
+      }),
+      renderExplainCard({
+        key: 'fh-active',
+        label: 'Fault Aktif',
+        valueHtml: int(s.activeCount),
+        caption: 'Terkonfirmasi ECU, belum ditangani',
+        explain: {
+          formula: 'Jumlah baris FaultData berstatus Active yang belum di-dismiss',
+          substituted: `${int(s.activeCount)} aktif + ${int(s.pendingCount)} pending + ${int(s.resolvedCount)} selesai/ditolak`,
+          source:
+            'FaultData.faultState (MyGeotab). Aktif, Pending, dan selesai/ditolak saling lepas dan jumlahnya ' +
+            'sama dengan total baris — tidak ada fault yang terhitung dua kali di antara ketiga kartu ini.',
+          kind: 'terukur',
+        },
+        open: openPanels.has('fh-active'),
+      }),
+      renderExplainCard({
+        key: 'fh-pending',
+        label: 'Perlu Dipantau',
+        valueHtml: int(s.pendingCount),
+        caption: 'Pending — terdeteksi, belum dikonfirmasi ECU',
+        explain: {
+          formula: 'Jumlah baris FaultData berstatus Pending yang belum di-dismiss',
+          substituted: `${int(s.pendingCount)} fault pending`,
+          source:
+            'FaultData.faultState (MyGeotab). Pending berarti ECU baru melihat gejalanya sekali dan belum ' +
+            'mengkonfirmasi — konfirmasi butuh siklus berkendara kedua. Sengaja TIDAK digabung ke Fault Aktif: ' +
+            'menggabungkannya menggelembungkan daftar kerja bengkel dengan hal yang bisa hilang sendiri.',
+          kind: 'terukur',
+        },
+        open: openPanels.has('fh-pending'),
+      }),
+      renderExplainCard({
+        key: 'fh-resolved',
+        label: 'Fault Ditolak/Selesai',
+        valueHtml: int(s.resolvedCount),
+        caption: 'Sudah dismiss atau sudah hilang sendiri',
+        explain: {
+          formula: 'Total baris FaultData − (aktif + pending)',
+          substituted: `${int(s.resolvedCount)} dari ${int(s.activeCount + s.pendingCount + s.resolvedCount)} baris fault pada rentang ini`,
+          source:
+            'FaultData (MyGeotab): baris yang sudah di-dismiss teknisi, atau yang statusnya sudah bukan ' +
+            'Active/Pending lagi. Ditampilkan supaya angka yang hilang dari ketiga kartu di sebelah kiri ' +
+            'bisa dilacak, bukan sebagai daftar kerja.',
+          kind: 'terukur',
+        },
+        open: openPanels.has('fh-resolved'),
+      }),
+    ].join('');
   }
 
   function hideChart(): void {
@@ -192,7 +270,9 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
     faultsEl.innerHTML = `
       <h2 class="fh-title">Unit Perlu Perhatian</h2>
       <table class="fa-table fh-table">
-        <thead><tr><th></th><th>Unit</th><th>Lampu Kritis</th><th>Fault Aktif</th><th>Terakhir</th></tr></thead>
+        <thead><tr><th></th><th>Unit</th>
+          <th><button type="button" class="fa-term-link" data-term="mil">Lampu Kritis</button></th>
+          <th>Fault Aktif</th><th>Terakhir</th></tr></thead>
         <tbody>
           ${shown.map((r, i) => faultRow(r, detailByDevice[r.deviceId] ?? [], i)).join('')}
         </tbody>
@@ -373,7 +453,14 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
     row.hidden = open;
   }
 
+  // Istilah yang tidak bisa ditebak dari namanya dibuat bisa diklik ke glosarium.
+  function onTermClick(e: Event): void {
+    const term = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-term]')?.dataset.term;
+    if (term) openGlossary(term);
+  }
+
   container.addEventListener('click', onToggle);
+  container.addEventListener('click', onTermClick);
   const stopFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   void load(getCurrentFilter());
 
@@ -382,6 +469,8 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
   return () => {
     runId++; // in-flight loads become stale and will not touch the DOM
     container.removeEventListener('click', onToggle);
+    container.removeEventListener('click', onTermClick);
+    stopExplain();
     stopFilter();
   };
 }

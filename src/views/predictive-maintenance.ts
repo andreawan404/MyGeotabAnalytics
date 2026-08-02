@@ -23,6 +23,8 @@ import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
 import type { ViewCtx } from './registry';
 import { esc, clamp as clampNumber, int } from '../utils/format';
+import { renderExplainCard, bindExplainToggles } from '../components/kpi-explain';
+import { openGlossary } from '../components/glossary';
 import {
   latestValuePerDevice,
   chronicFaults,
@@ -91,9 +93,13 @@ function num(n: number): string {
   return int(Math.round(n));
 }
 
+/** Kelas chip yang sama dengan yang dipakai kartu KPI di seluruh dashboard —
+ *  sebelumnya halaman ini punya sistem chip sendiri (fa-pm-chip-*) yang terlihat
+ *  berbeda untuk arti yang persis sama. Sekaligus dibuat bisa diklik: sampai
+ *  sekarang tidak ada satu pun tempat yang menjelaskan apa arti "heuristik". */
 function chip(kind: 'terukur' | 'heuristik'): string {
-  const cls = kind === 'terukur' ? 'fa-pm-chip-measured' : 'fa-pm-chip-heuristic';
-  return `<span class="fa-pm-chip ${cls}">${kind}</span>`;
+  return `<button type="button" class="fa-kpi-kind fa-kpi-kind-${kind} fa-kpi-kind-btn" data-term="${kind}"
+    aria-label="Apa arti ${kind}?">${kind}</button>`;
 }
 
 function formatTrend(ratio: number | undefined): string {
@@ -110,6 +116,8 @@ interface Column {
   label: string;
   /** Omitted for the identity column — "Unit" is a name, not a signal to source. */
   kind?: 'terukur' | 'heuristik';
+  /** id istilah glosarium untuk judul yang tidak bisa ditebak dari namanya. */
+  term?: string;
   show: boolean;
   /** Sort value. undefined always sorts last, in both directions. */
   value: (r: DeviceSignals) => number | string | undefined;
@@ -137,6 +145,11 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
   const chartPanel = pick('chart-panel');
   const canvas = pick<HTMLCanvasElement>('canvas');
   const tableEl = pick('table');
+
+  // Panel "Bagaimana ini dihitung?" yang terbuka bertahan melewati render ulang:
+  // mengubah interval servis tidak boleh membanting tutup panel yang justru
+  // sedang menjelaskan apa arti interval itu.
+  const { open: openPanels, stop: stopExplain } = bindExplainToggles(container);
 
   let data: Loaded | null = null;
   let chart: Chart | null = null;
@@ -257,40 +270,89 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
     hasFaults: boolean,
     hasDvir: boolean
   ) {
-    const card = (label: string, value: string, kind: 'terukur' | 'heuristik', note?: string) => `
-      <div class="fa-kpi-card">
-        <div class="fa-kpi-label">${label} ${chip(kind)}</div>
-        <div class="fa-kpi-value">${value}</div>
-        ${note ? `<div class="fa-kpi-note">${note}</div>` : ''}
-      </div>`;
-
     const cards: string[] = [];
     // No odometer => the service card is DROPPED, not zeroed. A "0 unit perlu
     // servis" card on a database that cannot measure it is a lie.
     if (hasOdometer) {
+      const due = rows.filter((r) => r.flags.includes('Servis jatuh tempo')).length;
       cards.push(
-        card(
-          'Unit Perlu Servis',
-          String(rows.filter((r) => r.flags.includes('Servis jatuh tempo')).length),
-          'heuristik',
-          `Ambang interval ${num(interval.km)} km`
-        )
+        renderExplainCard({
+          key: 'pm-service',
+          label: 'Unit Perlu Servis',
+          valueHtml: num(due),
+          caption: `Sisa jarak ke kelipatan interval ${num(interval.km)} km sudah menipis`,
+          explain: {
+            formula: 'sisa = interval − (odometer mod interval); ditandai bila sisa di bawah ambang',
+            substituted: `${num(due)} dari ${num(rows.length)} unit, dengan interval ${num(interval.km)} km / ${num(interval.hours)} jam mesin`,
+            source:
+              'StatusData odometer (MyGeotab) — terukur. Jadwalnya TIDAK terukur: MyGeotab tidak menyimpan riwayat ' +
+              'servis kecuali database ini memakai Maintenance Reminders, jadi perhitungan ini mengasumsikan setiap ' +
+              'servis terjadi tepat pada kelipatan interval yang Anda isi di bawah. Kalau armada Anda baru saja ' +
+              'servis di luar kelipatan itu, angkanya akan meleset — ubah intervalnya agar cocok.',
+            kind: 'heuristik',
+          },
+          open: openPanels.has('pm-service'),
+        })
       );
     }
     if (hasFaults) {
-      cards.push(card('Fault Kronis', String(chronicSeries), 'terukur', '&ge;3 hari berbeda dalam 90 hari'));
+      const worsening = rows.filter((r) => r.trendRatio !== undefined && r.trendRatio > TREND_THRESHOLD).length;
       cards.push(
-        card(
-          'Tren Memburuk',
-          String(rows.filter((r) => r.trendRatio !== undefined && r.trendRatio > TREND_THRESHOLD).length),
-          'heuristik',
-          `30 hari terakhir vs 30 hari sebelumnya &gt; ${TREND_THRESHOLD}&times;`
-        )
+        renderExplainCard({
+          key: 'pm-chronic',
+          label: 'Fault Kronis',
+          valueHtml: num(chronicSeries),
+          caption: 'Kerusakan yang sama berulang di unit yang sama',
+          explain: {
+            formula: 'Pasangan (unit, jenis kerusakan) yang muncul di ≥3 hari BERBEDA dalam 90 hari terakhir',
+            substituted: `${num(chronicSeries)} pasangan unit-kerusakan memenuhi syarat`,
+            source:
+              'FaultData + Diagnostic (MyGeotab). Yang dihitung hari berbeda, bukan jumlah kejadian — satu unit ' +
+              'yang melapor 400 kali dalam sehari BUKAN kronis, itu satu insiden. Pengelompokan harinya memakai ' +
+              'tanggal UTC, jadi kejadian larut malam waktu Indonesia bisa terhitung ke hari berikutnya.',
+            kind: 'terukur',
+          },
+          open: openPanels.has('pm-chronic'),
+        })
+      );
+      cards.push(
+        renderExplainCard({
+          key: 'pm-trend',
+          label: 'Tren Memburuk',
+          valueHtml: num(worsening),
+          caption: `Fault 30 hari terakhir lebih dari ${TREND_THRESHOLD}× periode sebelumnya`,
+          explain: {
+            formula: 'rasio = jumlah fault 30 hari terakhir ÷ jumlah fault 30 hari sebelumnya',
+            substituted: `${num(worsening)} unit punya rasio di atas ${TREND_THRESHOLD}×`,
+            source:
+              'FaultData 90 hari terakhir (MyGeotab) — sengaja mengabaikan tanggal mulai pada filter, karena tren ' +
+              'butuh riwayat. Unit yang tidak punya fault sama sekali di periode sebelumnya ditulis "baru", bukan ' +
+              'angka: pembaginya nol, jadi rasionya tak terhingga. Ambang 1,5× adalah pilihan kami, bukan standar industri.',
+            kind: 'heuristik',
+          },
+          open: openPanels.has('pm-trend'),
+        })
       );
     }
     if (hasDvir) {
+      const openDefects = rows.reduce((s, r) => s + r.openDefects, 0);
       cards.push(
-        card('Defect DVIR Terbuka', String(rows.reduce((s, r) => s + r.openDefects, 0)), 'terukur', 'status &ne; Repaired')
+        renderExplainCard({
+          key: 'pm-dvir',
+          label: 'Defect DVIR Terbuka',
+          valueHtml: num(openDefects),
+          caption: 'Kerusakan yang dilaporkan sopir dan belum diperbaiki',
+          explain: {
+            formula: 'Jumlah defect DVIR 90 hari terakhir yang statusnya bukan Repaired',
+            substituted: `${num(openDefects)} defect terbuka di ${num(rows.filter((r) => r.openDefects > 0).length)} unit`,
+            source:
+              'DVIRLog (MyGeotab). Ini satu-satunya sinyal di halaman ini yang datang dari mata manusia, bukan ' +
+              'sensor — sopir bisa melihat ban gundul dan kaca retak yang tidak akan pernah muncul sebagai fault ECU. ' +
+              'Kosong berarti armada Anda belum memakai DVIR, bukan berarti tidak ada kerusakan.',
+            kind: 'terukur',
+          },
+          open: openPanels.has('pm-dvir'),
+        })
       );
     }
     kpisEl.innerHTML = cards.join('');
@@ -428,7 +490,12 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
       },
       {
         key: 'risk',
-        label: 'riskOfBreakdown',
+        // Sebelumnya kolom ini berjudul "riskOfBreakdown" — nama field API mentah,
+        // camelCase, tanpa satuan dan tanpa skala. Geotab tidak mendokumentasikan
+        // skalanya, jadi judulnya kini menyebutkan siapa yang menghitungnya dan
+        // sisanya diserahkan ke glosarium.
+        label: 'Risiko Breakdown (Geotab)',
+        term: 'risk-of-breakdown',
         kind: 'terukur',
         show: flags.hasRisk,
         value: (r) => r.riskOfBreakdown,
@@ -451,8 +518,13 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
         kind: 'heuristik',
         show: true,
         value: (r) => r.flags.length,
+        // Nama flag-nya dicetak sebagai teks, bukan tooltip title=. title= hanya
+        // muncul saat hover: tidak terjangkau di layar sentuh dan tidak terbaca
+        // oleh pembaca layar — persis kebalikan dari yang dibutuhkan orang yang
+        // sedang mencoba memahami kenapa sebuah unit ditandai.
         cell: (r) =>
-          `<span class="fa-pm-flagcount" data-flagged="${r.flags.length > 0}" title="${esc(r.flags.join(', '))}">${r.flags.length}</span>`,
+          `<span class="fa-pm-flagcount" data-flagged="${r.flags.length > 0}">${r.flags.length}</span>` +
+          (r.flags.length ? `<span class="fa-pm-flagnames">${esc(r.flags.join(', '))}</span>` : ''),
       },
     ];
     const columns = allColumns.filter((c) => c.show);
@@ -466,6 +538,7 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
             <button type="button" class="fa-pm-sort" data-sort="${c.key}"${
               c.key === sortKey ? ` aria-sort="${sortDir === 1 ? 'ascending' : 'descending'}"` : ''
             }>${c.label}${c.key === sortKey ? (sortDir === 1 ? ' ↑' : ' ↓') : ''}</button>
+            ${c.term ? `<button type="button" class="fa-term-link" data-term="${c.term}" aria-label="Apa itu ${esc(c.label)}?">?</button>` : ''}
             ${c.kind ? chip(c.kind) : ''}
           </span>
         </th>`
@@ -539,6 +612,13 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
   };
   ctx.rootEl.addEventListener('dashboard:profile-change', onProfileChange);
 
+  // Judul kolom yang tidak bisa ditebak dari namanya membuka glosarium.
+  const onTermClick = (e: Event): void => {
+    const term = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-term]')?.dataset.term;
+    if (term) openGlossary(term);
+  };
+  container.addEventListener('click', onTermClick);
+
   const offFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   ctx.rootEl.addEventListener('dashboard:view-shown', onViewShown);
   load(getCurrentFilter());
@@ -548,6 +628,8 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
     offFilter();
     ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     ctx.rootEl.removeEventListener('dashboard:view-shown', onViewShown);
+    container.removeEventListener('click', onTermClick);
+    stopExplain();
     chart?.destroy();
     chart = null;
   };

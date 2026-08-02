@@ -21,6 +21,8 @@ import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
 import type { ViewCtx } from './registry';
 import { esc, int, upto1 } from '../utils/format';
+import { renderExplainCard, bindExplainToggles } from '../components/kpi-explain';
+import { openGlossary } from '../components/glossary';
 import type { TripDTO, ZoneDTO, DeviceLite, FilterChangeDetail } from '../api/fetchers/types';
 
 const DEFAULT_DWELL_MINUTES = 15;
@@ -63,6 +65,9 @@ interface Snapshot {
 
 export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => void {
   let dwellMinutes = loadDwell(ctx.database);
+  // Panel penjelasan yang terbuka bertahan melewati render ulang: mengubah ambang
+  // berhenti tidak boleh membanting tutup panel yang menjelaskan ambang itu.
+  const { open: openPanels, stop: stopExplain } = bindExplainToggles(container);
   let snapshot: Snapshot | null = null;
   let seq = 0;
 
@@ -149,7 +154,7 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
           <div class="tr-when">${esc(formatWhen(r.departAt))}</div>
         </td>
         <td>
-          <div class="tr-zone">${esc(r.toZone.name)}${r.isRoundTrip ? '<span class="tr-badge">pulang-pergi</span>' : ''}</div>
+          <div class="tr-zone">${esc(r.toZone.name)}${r.isRoundTrip ? '<button type="button" class="tr-badge fa-term-link" data-term="pulang-pergi">pulang-pergi</button>' : ''}</div>
           <div class="tr-when">${esc(formatWhen(r.arriveAt))}</div>
         </td>
         <td class="tr-num">${esc(formatDur(r.durationSec))}</td>
@@ -187,8 +192,32 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
     }
 
     const shown = rows.slice(0, MAX_ROWS);
+    const roundTrips = rows.filter((r) => r.isRoundTrip).length;
     container.innerHTML = `
       ${controls()}
+      <div class="fa-kpi-row">
+        ${renderExplainCard({
+          key: 'tr-journeys',
+          label: 'Perjalanan Tersusun',
+          valueHtml: int(rows.length),
+          caption: `Dari ${int(trips.length)} trip mentah MyGeotab, digabung pada ambang ${int(dwellMinutes)} menit`,
+          explain: {
+            formula:
+              'Trip berurutan dari unit yang sama digabung jadi satu perjalanan selama jeda antar trip lebih pendek dari ambang berhenti',
+            substituted:
+              `${int(trips.length)} trip → ${int(rows.length)} perjalanan zona-ke-zona` +
+              (roundTrips ? `, ${int(roundTrips)} di antaranya pulang-pergi (berakhir di zona asal)` : ''),
+            source:
+              'Trip + Zone (MyGeotab). Tiga hal yang perlu diketahui sebelum memakai angkanya: (1) kolom Durasi ' +
+              'menghitung waktu dari berangkat sampai tiba TERMASUK berhenti di tengah, bukan hanya waktu jalan; ' +
+              '(2) kalau titik berada di dalam beberapa zona yang bertumpuk, yang dipilih adalah poligon TERKECIL, ' +
+              'sehingga "Gudang A" menang atas "Kawasan Industri"; (3) kolom BBM dikosongkan kalau ada SATU saja ' +
+              'ruas perjalanan yang tidak terukur — separuh angka lebih menyesatkan daripada tidak ada angka.',
+            kind: 'terukur',
+          },
+          open: openPanels.has('tr-journeys'),
+        })}
+      </div>
       <div class="tr-tablewrap">
         <table class="fa-table tr-table">
           <thead><tr>
@@ -237,6 +266,12 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
   };
   ctx.rootEl.addEventListener('dashboard:profile-change', onProfileChange);
 
+  const onTermClick = (e: Event): void => {
+    const term = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-term]')?.dataset.term;
+    if (term) openGlossary(term);
+  };
+  container.addEventListener('click', onTermClick);
+
   container.addEventListener('change', onInput);
   const stopFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   void load(getCurrentFilter());
@@ -245,6 +280,8 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
     seq++; // in-flight loads become stale and will not paint
     ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     container.removeEventListener('change', onInput);
+    container.removeEventListener('click', onTermClick);
+    stopExplain();
     stopFilter();
   };
 }

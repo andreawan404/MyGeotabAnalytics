@@ -19,6 +19,13 @@ export interface ViewDef {
   id: string;
   label: string;
   load: () => Promise<ViewInit>;
+  /** Apakah view ini benar-benar memakai dropdown Zona di filter bar. Hanya
+   *  Keamanan. Tanpa flag ini, enam view lain menampilkan dropdown aktif yang
+   *  diam-diam tidak berpengaruh — user menyalahkan datanya, bukan filternya. */
+  usesZone?: boolean;
+  /** View yang mengabaikan tanggal MULAI di filter karena butuh riwayat tetap
+   *  (tren 90 hari). Filter bar mengatakannya, alih-alih terlihat berlaku. */
+  ignoresDateFrom?: string;
 }
 
 export const VIEWS: ViewDef[] = [
@@ -29,8 +36,15 @@ export const VIEWS: ViewDef[] = [
     id: 'maintenance',
     label: 'Predictive Maintenance',
     load: () => import('./predictive-maintenance').then((m) => m.initPredictiveView),
+    ignoresDateFrom:
+      'Kolom fault, tren dan DVIR di halaman ini selalu memakai 90 hari terakhir, bukan tanggal mulai di atas — pola hanya kelihatan kalau riwayatnya cukup panjang. Tanggal akhir tetap dipakai.',
   },
-  { id: 'security', label: 'Security & Emergency', load: () => import('./security').then((m) => m.initSecurityView) },
+  {
+    id: 'security',
+    label: 'Security & Emergency',
+    load: () => import('./security').then((m) => m.initSecurityView),
+    usesZone: true,
+  },
   { id: 'safety', label: 'Safety Behaviour', load: () => import('./safety').then((m) => m.initSafetyView) },
   { id: 'fuel', label: 'Konsumsi BBM', load: () => import('./fuel').then((m) => m.initFuelView) },
 ];

@@ -29,6 +29,8 @@ import { toUtcRange } from '../utils/date-range';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
 import { esc, token, int, two, upto1 } from '../utils/format';
+import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
+import { openGlossary } from '../components/glossary';
 import type { ViewCtx } from './registry';
 import {
   CATEGORIES,
@@ -164,10 +166,34 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     container.innerHTML = `
       <div class="fa-safety">
         <div class="fa-kpi-row">
-          ${kpi('Total Pelanggaran', int(events.length))}
-          ${kpi('Pelanggaran / 100 km (armada)', fleetPer100 === null ? '—' : two(fleetPer100))}
-          ${categoryKpi('harsh-braking', breakdown, configured)}
-          ${categoryKpi('speeding', breakdown, configured)}
+          ${explainKpi(openPanels, 'sf-total', 'Total Pelanggaran', int(events.length), {
+            formula: 'Jumlah seluruh ExceptionEvent pada rentang, dari semua Rule keselamatan yang aktif',
+            substituted: `${int(events.length)} kejadian dari ${int(trips.length)} trip (${two(totalKm)} km)`,
+            source:
+              'ExceptionEvent + Rule (MyGeotab), dijumlahkan apa adanya. Angka ini naik-turun mengikuti kesibukan ' +
+              'armada, jadi jangan dipakai untuk peringkat — gunakan per 100 km di sebelahnya.',
+            kind: 'terukur',
+          })}
+          ${explainKpi(
+            openPanels,
+            'sf-per100',
+            'Pelanggaran / 100 km (armada)',
+            fleetPer100 === null ? '—' : two(fleetPer100),
+            {
+              formula: 'Σ pelanggaran ÷ Σ jarak (km) × 100',
+              substituted:
+                fleetPer100 === null
+                  ? `Belum bisa dihitung: jarak armada 0 km pada rentang ini, jadi pembaginya nol`
+                  : `${int(events.length)} kejadian ÷ ${two(totalKm)} km × 100 = ${two(fleetPer100)}`,
+              source:
+                'ExceptionEvent + Trip.distance (MyGeotab). Dinormalkan terhadap jarak supaya unit 4.000 km/minggu ' +
+                'bisa dibandingkan adil dengan unit 200 km/minggu. Jarak SELURUH armada dijumlah dulu baru dibagi ' +
+                '— ini bukan rata-rata dari angka per unit, jadi unit tersibuk berbobot lebih besar di angka armada.',
+              kind: 'terukur',
+            }
+          )}
+          ${categoryKpi('harsh-braking', breakdown, configured, openPanels)}
+          ${categoryKpi('speeding', breakdown, configured, openPanels)}
         </div>
 
         ${
@@ -333,6 +359,15 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     `;
   }
 
+  // Panel penjelasan yang terbuka bertahan melewati render ulang.
+  const { open: openPanels, stop: stopExplain } = bindExplainToggles(container);
+
+  const onTermClick = (e: Event): void => {
+    const term = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-term]')?.dataset.term;
+    if (term) openGlossary(term);
+  };
+  container.addEventListener('click', onTermClick);
+
   // Initial paint + refetch when the filter changes (only while this view is the
   // visible one — reload-when-visible.ts keeps six views off the rate limit).
   const unsubscribeFilter = onFilterChangeVisible(ctx.rootEl, container, load);
@@ -365,6 +400,8 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     loadSeq++; // in-flight responses land after unmount; make them no-ops
     ctx.rootEl.removeEventListener('dashboard:view-shown', onShown);
     container.removeEventListener('click', onToggle);
+    container.removeEventListener('click', onTermClick);
+    stopExplain();
     unsubscribeFilter();
     destroyCharts();
   };
@@ -379,16 +416,38 @@ function kpi(label: string, value: string, note = ''): string {
     </div>`;
 }
 
+function explainKpi(
+  openPanels: Set<string>,
+  key: string,
+  label: string,
+  valueHtml: string,
+  explain: KpiExplanation
+): string {
+  return renderExplainCard({ key, label, valueHtml, caption: '', explain, open: openPanels.has(key) });
+}
+
 /** A category with no Rule shows "—", never 0: zero is a measurement, and none
  *  was taken. Same distinction the fleet-health view makes for absent data. */
 function categoryKpi(
   cat: Category,
   breakdown: Record<Category, number>,
-  configured: Record<Category, boolean>
+  configured: Record<Category, boolean>,
+  openPanels: Set<string>
 ): string {
-  return configured[cat]
-    ? kpi(esc(CATEGORY_LABELS[cat]), int(breakdown[cat]))
-    : kpi(esc(CATEGORY_LABELS[cat]), '—', 'Rule belum dikonfigurasi di database ini');
+  // Tanpa Rule tidak ada yang bisa dijelaskan — kartu tetap "—" tanpa panel.
+  if (!configured[cat]) {
+    return kpi(esc(CATEGORY_LABELS[cat]), '—', 'Rule belum dikonfigurasi di database ini');
+  }
+  return explainKpi(openPanels, `sf-${cat}`, CATEGORY_LABELS[cat], int(breakdown[cat]), {
+    formula: `Jumlah ExceptionEvent yang masuk kategori "${CATEGORY_LABELS[cat]}"`,
+    substituted: `${int(breakdown[cat])} kejadian`,
+    source:
+      'ExceptionEvent + Rule + Diagnostic (MyGeotab). Kategori ditentukan bertingkat: pertama dari diagnostic ' +
+      'yang dipicu Rule, lalu dari id aturan bawaan Geotab, dan baru terakhir dari pencocokan nama. Urutan itu ' +
+      'penting karena nama aturan bawaan diterjemahkan per bahasa database — mencocokkan nama duluan akan gagal ' +
+      'di database berbahasa Indonesia. Aturan buatan sendiri yang tidak cocok satu pun masuk kategori "lainnya".',
+    kind: 'terukur',
+  });
 }
 
 /** Renders a rule's firing threshold, e.g. "< −0,40 G". Geotab records the

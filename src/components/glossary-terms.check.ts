@@ -43,7 +43,10 @@ for (const file of walk('src')) {
     assert.ok(known.has(m[1]), `${file}: openGlossary('${m[1]}') menunjuk istilah yang tidak ada`);
   }
   // Bentuk data-attribute yang dipakai listener terdelegasi di dalam view.
-  for (const m of src.matchAll(/data-term="([^"]+)"/g)) {
+  // Hanya nilai literal yang bisa diperiksa; `data-term="${kind}"` dibangun saat
+  // runtime, jadi dilewati di sini — chip terukur/heuristik/estimasi punya
+  // penjaganya sendiri di daftar "istilah wajib" di bawah.
+  for (const m of src.matchAll(/data-term="([^"$]+)"/g)) {
     linkCount++;
     assert.ok(known.has(m[1]), `${file}: data-term="${m[1]}" menunjuk istilah yang tidak ada`);
   }
