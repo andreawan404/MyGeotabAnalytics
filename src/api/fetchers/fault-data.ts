@@ -1,7 +1,7 @@
 import { callApi } from '../geotabClient';
 import { getCached, setCached, buildCacheKey } from '../../utils/cache';
 import type { FaultDataDTO } from './types';
-import { groupDeviceSearch } from './search';
+import { groupDeviceSearch, restrictToGroup } from './search';
 
 const TTL_MS = 5 * 60 * 1000;
 const RESULTS_LIMIT = 50000;
@@ -46,7 +46,13 @@ export async function fetchFaultData(params: {
     resultsLimit: RESULTS_LIMIT,
   });
 
-  const dtos = raw.map(toDTO);
+  // Keanggotaan grup ditegakkan di klien: search-nya diabaikan server (search.ts).
+
+
+  const scoped = await restrictToGroup(raw, params.database, params.groupId);
+
+
+  const dtos = scoped.map(toDTO);
   await setCached(key, dtos, TTL_MS);
   return dtos;
 }

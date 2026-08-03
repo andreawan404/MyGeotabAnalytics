@@ -1,7 +1,7 @@
 import { callApi } from '../geotabClient';
 import { getCached, setCached, buildCacheKey } from '../../utils/cache';
 import type { LogRecordDTO } from './types';
-import { groupDeviceSearch } from './search';
+import { groupDeviceSearch, restrictToGroup } from './search';
 
 const TTL_MS = 5 * 60 * 1000;
 const DEFAULT_LIMIT = 1000;
@@ -40,7 +40,13 @@ export async function fetchLogRecords(params: {
     resultsLimit,
   });
 
-  const dtos = raw.map(toDTO);
+  // Keanggotaan grup ditegakkan di klien: search-nya diabaikan server (search.ts).
+
+
+  const scoped = await restrictToGroup(raw, params.database, params.groupId);
+
+
+  const dtos = scoped.map(toDTO);
   await setCached(key, dtos, TTL_MS);
   return dtos;
 }

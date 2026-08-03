@@ -373,6 +373,70 @@ async function run() {
   assert.strictEqual(findDiagnosticIdByName(diagnostics, /total fuel used/i), 'a7B8');
   assert.strictEqual(findDiagnosticIdByName(diagnostics, /nonexistent/i), null, 'no match -> null, not undefined');
 
+  // --- filter grup: server MENGABAIKAN deviceSearch.groups ------------------
+  //
+  // Bug sungguhan: memilih satu grup tetap memunculkan 562 unit, dan sebagian
+  // besar barisnya berlabel id perangkat mentah — bukti Device tersaring
+  // sementara Trip tidak. Mock di bawah meniru asimetri itu persis: Device
+  // menghormati search.groups, Trip mengabaikan deviceSearch.groups.
+  {
+    const allDevices = [
+      { id: 'dev-in-1', name: 'B 1111 AA', groups: [{ id: 'grp-a' }] },
+      { id: 'dev-in-2', name: 'B 2222 BB', groups: [{ id: 'grp-a' }] },
+      { id: 'dev-out', name: 'B 9999 ZZ', groups: [{ id: 'grp-b' }] },
+    ];
+    const allTrips = [
+      { id: 't1', device: { id: 'dev-in-1' }, start: '2026-08-01T01:00:00Z', stop: '2026-08-01T02:00:00Z', distance: 10 },
+      { id: 't2', device: { id: 'dev-out' }, start: '2026-08-01T03:00:00Z', stop: '2026-08-01T04:00:00Z', distance: 20 },
+      { id: 't3', device: { id: 'dev-in-2' }, start: '2026-08-01T05:00:00Z', stop: '2026-08-01T06:00:00Z', distance: 30 },
+      { id: 't4', device: null, start: '2026-08-01T07:00:00Z', stop: '2026-08-01T08:00:00Z', distance: 40 },
+    ];
+
+    initGeotabClient({
+      call: (_m, params: any, cb) => {
+        if (params?.typeName === 'Device') {
+          const g = params?.search?.groups?.[0]?.id;
+          cb(g ? allDevices.filter((d) => d.groups.some((x) => x.id === g)) : allDevices);
+          return;
+        }
+        cb(allTrips); // Trip: search diabaikan sepenuhnya, seperti server sungguhan
+      },
+      multiCall: (_c, cb) => cb([]),
+    });
+
+    const scoped = await fetchTrips({
+      database: 'grpdb1', fromDate: '2026-08-01T00:00:00Z', toDate: '2026-08-02T00:00:00Z', groupId: 'grp-a',
+    });
+    assert.deepStrictEqual(
+      scoped.map((t) => t.id).sort(),
+      ['t1', 't3'],
+      'trip milik unit di luar grup harus dibuang di sisi klien'
+    );
+    assert.ok(!scoped.some((t) => t.id === 't4'), 'baris tanpa device tidak bisa dibuktikan anggota grup');
+
+    // Tanpa groupId tidak ada penyaringan sama sekali — termasuk baris tanpa device.
+    const all = await fetchTrips({
+      database: 'grpdb2', fromDate: '2026-08-01T00:00:00Z', toDate: '2026-08-02T00:00:00Z',
+    });
+    assert.strictEqual(all.length, 4, 'tanpa grup, semua baris lewat apa adanya');
+  }
+
+  // Daftar device grup kosong TIDAK boleh mengosongkan halaman: mengubah
+  // "terlalu banyak data" jadi "kosong tanpa sebab" adalah kemunduran.
+  {
+    initGeotabClient({
+      call: (_m, params: any, cb) => {
+        if (params?.typeName === 'Device') return cb([]);
+        cb([{ id: 't1', device: { id: 'x' }, start: '2026-08-01T01:00:00Z', stop: '2026-08-01T02:00:00Z', distance: 5 }]);
+      },
+      multiCall: (_c, cb) => cb([]),
+    });
+    const rows = await fetchTrips({
+      database: 'grpdb3', fromDate: '2026-08-01T00:00:00Z', toDate: '2026-08-02T00:00:00Z', groupId: 'kosong',
+    });
+    assert.strictEqual(rows.length, 1, 'grup tanpa device terdeteksi -> jangan saring apa pun');
+  }
+
   console.log('fetchers.check.ts: PASS');
 }
 

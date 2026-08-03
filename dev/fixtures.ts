@@ -25,12 +25,16 @@ function dur(h: number, m: number, s = 0): string {
   return h >= 24 ? `${Math.floor(h / 24)}.${body}` : body;
 }
 
+// Keanggotaan grup ikut difixture supaya mock bisa meniru satu-satunya perilaku
+// server yang penting di sini: Device TERSARING oleh search.groups, sementara
+// Trip/ExceptionEvent/StatusData TIDAK tersaring oleh deviceSearch.groups.
+// Asimetri itulah yang membocorkan seluruh armada ke halaman yang sudah difilter.
 export const rawDevices = [
-  { id: 'device-1', name: 'Truck Alpha (B 1234 ABC)' },
-  { id: 'device-2', name: 'Truck Bravo (B 5678 DEF)' },
-  { id: 'device-3', name: 'Van Charlie (B 9012 GHI)' },
-  { id: 'device-4', name: 'Van Delta (B 3456 JKL)' },
-  { id: 'device-5', name: 'Motor Echo (B 7890 MNO)' },
+  { id: 'device-1', name: 'Truck Alpha (B 1234 ABC)', groups: [{ id: 'group-1' }] },
+  { id: 'device-2', name: 'Truck Bravo (B 5678 DEF)', groups: [{ id: 'group-1' }] },
+  { id: 'device-3', name: 'Van Charlie (B 9012 GHI)', groups: [{ id: 'group-2' }] },
+  { id: 'device-4', name: 'Van Delta (B 3456 JKL)', groups: [{ id: 'group-2' }] },
+  { id: 'device-5', name: 'Motor Echo (B 7890 MNO)', groups: [{ id: 'group-3' }] },
 ];
 
 export const rawGroups = [

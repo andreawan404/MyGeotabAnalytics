@@ -1,7 +1,7 @@
 import { callApi, multiCall } from '../geotabClient';
 import { getCached, setCached, buildCacheKey } from '../../utils/cache';
 import type { StatusDataDTO } from './types';
-import { groupDeviceSearch } from './search';
+import { groupDeviceSearch, restrictToGroup } from './search';
 
 const TTL_MS = 5 * 60 * 1000;
 const DEFAULT_LIMIT = 50000;
@@ -57,7 +57,9 @@ export async function fetchStatusData(params: Query & { diagnosticId: string }):
 
   const raw = await callApi<any[]>('Get', getParams(params.diagnosticId, params));
 
-  const dtos = raw.map(toDTO);
+  // Keanggotaan grup ditegakkan di klien: search-nya diabaikan server (search.ts).
+  const scoped = await restrictToGroup(raw, params.database, params.groupId);
+  const dtos = scoped.map(toDTO);
   await setCached(key, dtos, TTL_MS);
   return dtos;
 }
@@ -82,7 +84,12 @@ export async function fetchStatusDataMulti(
   const results = await multiCall<any[][]>(missing.map((id) => ['Get', getParams(id, params)]));
 
   for (let i = 0; i < missing.length; i++) {
-    const dtos = (results[i] ?? []).map(toDTO);
+    // Jalur multiCall butuh penyaringan grup yang sama dengan fetchStatusData.
+    // Melewatkannya di sini akan membuat odometer dan jam mesin tetap
+    // fleet-wide sementara sisa halaman sudah tersaring — beda angka di satu
+    // layar, jenis kesalahan yang paling lama tidak disadari.
+    const scoped = await restrictToGroup(results[i] ?? [], params.database, params.groupId);
+    const dtos = scoped.map(toDTO);
     out[missing[i]] = dtos;
     await setCached(cacheKey(missing[i], params), dtos, TTL_MS);
   }

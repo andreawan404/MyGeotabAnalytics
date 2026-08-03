@@ -55,6 +55,15 @@ function resolve(method: string, params: any): any[] {
   const typeName = params?.typeName as string | undefined;
   const rows = (typeName && FIXTURES_BY_TYPE_NAME[typeName]) || [];
 
+  // Device menghormati search.groups, seperti MyGeotab sungguhan. Trip dan
+  // kawan-kawan SENGAJA tetap mengabaikan deviceSearch.groups — itu perilaku
+  // server yang membuat memilih satu grup tetap memunculkan seluruh armada,
+  // dan mock yang tidak menirunya membuat bug itu mustahil ditangkap di sini.
+  const groupId = params?.search?.groups?.[0]?.id;
+  if (typeName === 'Device' && groupId) {
+    return rows.filter((r) => (r.groups ?? []).some((g: any) => g.id === groupId));
+  }
+
   const diagnosticId = params?.search?.diagnosticSearch?.id;
   if (typeName === 'StatusData' && diagnosticId) {
     const matched = rows.filter((r) => r.diagnostic?.id === diagnosticId);
