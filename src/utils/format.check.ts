@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { esc, clamp, fin, int, one, two, durationHm } from './format';
+import { esc, clamp, fin, int, one, two, durationHm, comparePlates, matchesPlate } from './format';
 
 // esc — versi ketat: kutip tunggal ikut, dan & ganda tidak boleh double-encode
 // jadi bentuk yang salah ("&amp;amp;"), karena '&' dipetakan sekali per karakter.
@@ -37,5 +37,33 @@ assert.equal(durationHm(3600), '1j 0m');
 assert.equal(durationHm(3660), '1j 1m');
 assert.equal(durationHm(-500), '0j 0m');
 assert.equal(durationHm(NaN), '0j 0m');
+
+// --- urutan nomor polisi ----------------------------------------------------
+//
+// Yang paling mudah rusak: tanpa `numeric`, "B 10000 XX" jatuh SEBELUM
+// "B 9374 TFY" karena "1" < "9" secara leksikal. Terlihat benar sampai armada
+// punya plat lima digit.
+assert.ok(comparePlates('B 9374 TFY', 'B 10000 XX') < 0, 'urutan angka harus numerik, bukan leksikal');
+assert.ok(comparePlates('A 9828 RA', 'B 9374 TFY') < 0);
+assert.ok(comparePlates('B 9875 UEX', 'B 9890 TEZ') < 0);
+assert.equal(comparePlates('B 9875 UEX', 'b 9875 uex'), 0, 'besar-kecil huruf tidak boleh mengubah urutan');
+
+// Nama unit adalah teks bebas: plat dan nomor rangka hidup berdampingan di
+// database yang sama, dan keduanya harus tetap terurut stabil.
+assert.deepEqual(
+  ['MHCFVR34USJ001916', 'B 9875 UEX', 'A 9828 RA', 'H 8762 OH', 'B 9374 TFY'].sort(comparePlates),
+  ['A 9828 RA', 'B 9374 TFY', 'B 9875 UEX', 'H 8762 OH', 'MHCFVR34USJ001916']
+);
+
+// --- pencocokan pencarian ---------------------------------------------------
+//
+// Orang mengetik plat tanpa spasi. Kalau ini gagal, kolom pencarian terasa rusak
+// padahal datanya ada.
+assert.ok(matchesPlate('B 9875 UEX', 'b9875'), 'spasi harus diabaikan');
+assert.ok(matchesPlate('B 9875 UEX', 'B 9875'));
+assert.ok(matchesPlate('B 9875 UEX', 'uex'), 'huruf kecil harus cocok');
+assert.ok(matchesPlate('B 9875 UEX', ''), 'kueri kosong menampilkan semua');
+assert.ok(matchesPlate('B 9875 UEX', '   '), 'spasi saja sama dengan kueri kosong');
+assert.ok(!matchesPlate('B 9875 UEX', 'B 9890'));
 
 console.log('format.check.ts OK');

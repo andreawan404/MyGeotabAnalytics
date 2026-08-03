@@ -45,6 +45,32 @@ export function token(name: string, fallback: string): string {
   return value || fallback;
 }
 
+/**
+ * Urutan nomor polisi. `numeric` yang menentukan: tanpa itu "B 10000 XX" jatuh
+ * sebelum "B 9374 TFY" karena "1" < "9" secara leksikal.
+ *
+ * Nama unit adalah teks bebas yang diketik pelanggan di MyGeotab, jadi isinya
+ * campur — plat Indonesia ("B 9875 UEX") berdampingan dengan nomor rangka
+ * ("MHCFVR34USJ001916"). Perbandingan natural menangani keduanya tanpa perlu
+ * mem-parse format plat, yang toh akan gagal pada armada yang menamai unitnya
+ * dengan cara lain.
+ */
+export function comparePlates(a: string, b: string): number {
+  return a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' });
+}
+
+/**
+ * Pencocokan pencarian unit: abaikan besar-kecil huruf DAN semua karakter bukan
+ * huruf/angka, sehingga "b9875" dan "B 9875" sama-sama menemukan "B 9875 UEX".
+ * Orang mengetik plat tanpa spasi; memaksa mereka menebak spasinya membuat
+ * kolom pencarian terasa rusak.
+ */
+export function matchesPlate(name: string, query: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const q = norm(query);
+  return q === '' || norm(name).includes(q);
+}
+
 /** Durasi ringkas ala Indonesia: "3j 20m". Detik negatif diperlakukan nol. */
 export function durationHm(totalSec: number): string {
   const s = Math.max(0, fin(totalSec));

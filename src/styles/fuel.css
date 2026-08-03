@@ -121,3 +121,136 @@
     height: 260px;
   }
 }
+
+/* --- pencarian + urutan (tabel & grafik) ---------------------------------- */
+
+.fa-fuel-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 1rem 0 0.5rem;
+}
+
+.fa-fuel-search {
+  font: inherit;
+  font-size: 0.8125rem;
+  min-height: 44px; /* target sentuh yang sama dengan kontrol lain */
+  padding: 0 0.6rem;
+  border: 1px solid var(--fa-border);
+  border-radius: 6px;
+  background: var(--fa-surface);
+  color: var(--fa-text);
+  width: 12rem;
+}
+
+.fa-fuel-search:focus-visible {
+  outline: 2px solid var(--fa-accent);
+  outline-offset: 2px;
+}
+
+.fa-fuel-count,
+.fa-fuel-hint {
+  font-size: 0.75rem;
+  color: var(--fa-muted);
+}
+
+.fa-fuel-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* Dua tombol saling meniadakan, jadi digambar sebagai satu segmen — bukan dua
+   tombol lepas yang terlihat seolah bisa aktif bersamaan. */
+.fa-fuel-seg {
+  display: inline-flex;
+  border: 1px solid var(--fa-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.fa-fuel-segbtn {
+  font: inherit;
+  font-size: 0.75rem;
+  min-height: 32px;
+  padding: 0 0.7rem;
+  border: 0;
+  background: var(--fa-surface);
+  color: var(--fa-muted);
+  cursor: pointer;
+}
+
+.fa-fuel-segbtn + .fa-fuel-segbtn {
+  border-left: 1px solid var(--fa-border);
+}
+
+/* Keadaan aktif dibawa aria-pressed, bukan kelas terpisah: satu sumber
+   kebenaran, dan pembaca layar mendapat informasi yang sama dengan mata. */
+.fa-fuel-segbtn[aria-pressed='true'] {
+  background: var(--fa-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.fa-fuel-segbtn:focus-visible {
+  outline: 2px solid var(--fa-accent);
+  outline-offset: -2px;
+}
+
+/* Daftar unit bisa ratusan baris; batasi tingginya dan gulirkan isinya supaya
+   catatan di bawah tabel tidak terdorong jauh dari layar. */
+.fa-fuel-tablewrap {
+  box-sizing: border-box; /* 420px berarti 420px, bukan 420 + 2px bingkai */
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  overscroll-behavior: contain;
+}
+
+.fa-fuel-tablewrap .fa-table {
+  border: 0; /* pembungkusnya yang punya bingkai */
+  border-radius: 0;
+}
+
+/* Judul kolom tetap terlihat saat menggulir — tanpa ini, menggulir ke unit
+   ke-80 berarti menebak kolom mana yang sedang dibaca. */
+.fa-fuel-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--fa-surface);
+  box-shadow: inset 0 -1px 0 var(--fa-border);
+}
+
+.fa-fuel-sort {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fa-muted);
+  cursor: pointer;
+}
+
+.fa-fuel-sort:hover,
+.fa-fuel-sort:focus-visible {
+  color: var(--fa-accent);
+}
+
+.fa-fuel-table th[aria-sort] .fa-fuel-sort {
+  color: var(--fa-text);
+}
+
+/* Angka rata kanan supaya digitnya sebaris dan besar-kecilnya bisa dibandingkan
+   sekilas tanpa membaca angkanya satu per satu. */
+.fa-fuel-num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}

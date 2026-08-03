@@ -191,3 +191,58 @@ export function sumValues(byDevice: Record<string, number>): number {
   for (const v of Object.values(byDevice)) if (Number.isFinite(v)) total += v;
   return total;
 }
+
+// --- baris tabel: penyaringan dan pengurutan --------------------------------
+//
+// Murni dan diuji sendiri, karena inilah yang menentukan unit mana yang dilihat
+// orang lebih dulu — dan urutan yang salah pada kolom yang punya sel kosong
+// adalah jenis kerusakan yang tampak masuk akal sampai seseorang menagih klien
+// berdasarkan urutan itu.
+
+export interface FuelRow {
+  id: string;
+  name: string;
+  km: number;
+  litres: number;
+  /** null bila jarak 0 — laju tidak diketahui, bukan nol. */
+  efficiency: number | null;
+  /** null bila liternya bukan hasil pengukuran (lihat economyBlocker). */
+  economy: number | null;
+  cost: number | null;
+}
+
+export type FuelSortKey = 'name' | 'km' | 'litres' | 'efficiency' | 'economy' | 'cost';
+
+/**
+ * Mengurutkan baris tabel. `dir` 1 menaik, -1 menurun.
+ *
+ * Sel kosong (null) SELALU di bawah, ke arah mana pun diurutkan. Memperlakukan
+ * null sebagai nol akan menempatkan unit yang datanya tidak ada di puncak
+ * daftar "paling irit" — pujian untuk unit yang sebenarnya tidak terukur.
+ */
+export function sortFuelRows(rows: FuelRow[], key: FuelSortKey, dir: 1 | -1): FuelRow[] {
+  return [...rows].sort((a, b) => {
+    if (key === 'name') return a.name.localeCompare(b.name, 'id', { numeric: true, sensitivity: 'base' }) * dir;
+    const av = a[key];
+    const bv = b[key];
+    if (av === null || !Number.isFinite(av)) return bv === null || !Number.isFinite(bv) ? 0 : 1;
+    if (bv === null || !Number.isFinite(bv)) return -1;
+    return (av - bv) * dir;
+  });
+}
+
+/**
+ * Unit yang masuk grafik "Efisiensi per unit".
+ *
+ * `boros` mengambil L/100km TERTINGGI, `hemat` yang TERENDAH — dua kelompok
+ * unit yang berbeda, bukan daftar yang sama dibalik. Itu yang membuat grafik
+ * ini bisa dipakai menemukan patokan terbaik armada, bukan cuma yang terburuk.
+ *
+ * Unit tanpa efisiensi terukur dibuang, bukan digambar sebagai nol: batang nol
+ * terbaca sebagai "tidak membakar apa-apa".
+ */
+export function topByEfficiency(rows: FuelRow[], dir: 'boros' | 'hemat', limit: number): FuelRow[] {
+  const usable = rows.filter((r) => r.efficiency !== null && Number.isFinite(r.efficiency));
+  const sorted = sortFuelRows(usable, 'efficiency', dir === 'boros' ? -1 : 1);
+  return sorted.slice(0, limit);
+}

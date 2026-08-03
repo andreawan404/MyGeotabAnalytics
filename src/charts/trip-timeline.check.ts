@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { tripsToFloatingBars, comparePlates, matchesPlate, visibleDeviceNames } from './trip-timeline';
+import { tripsToFloatingBars, visibleDeviceNames } from './trip-timeline';
 import type { TripDTO, DeviceLite } from '../api/fetchers/types';
 
 const devices: DeviceLite[] = [{ id: 'd1', name: 'Truck 1' }];
@@ -31,34 +31,9 @@ assert.deepStrictEqual(bars[1], {
   y: 'd2',
 });
 
-// --- urutan nomor polisi ----------------------------------------------------
-//
-// Yang paling mudah rusak: tanpa `numeric`, "B 10000 XX" jatuh SEBELUM
-// "B 9374 TFY" karena "1" < "9" secara leksikal. Itu terlihat benar sampai
-// armada punya plat lima digit.
-assert.ok(comparePlates('B 9374 TFY', 'B 10000 XX') < 0, 'urutan angka harus numerik, bukan leksikal');
-assert.ok(comparePlates('A 9828 RA', 'B 9374 TFY') < 0);
-assert.ok(comparePlates('B 9875 UEX', 'B 9890 TEZ') < 0);
-assert.equal(comparePlates('B 9875 UEX', 'b 9875 uex'), 0, 'besar-kecil huruf tidak boleh mengubah urutan');
-
-// Nama unit adalah teks bebas: plat dan nomor rangka hidup berdampingan di
-// database yang sama, dan keduanya harus tetap terurut stabil.
-const messy = ['MHCFVR34USJ001916', 'B 9875 UEX', 'A 9828 RA', 'H 8762 OH', 'B 9374 TFY'];
-assert.deepStrictEqual(
-  [...messy].sort(comparePlates),
-  ['A 9828 RA', 'B 9374 TFY', 'B 9875 UEX', 'H 8762 OH', 'MHCFVR34USJ001916']
-);
-
-// --- pencocokan pencarian ---------------------------------------------------
-//
-// Orang mengetik plat tanpa spasi. Kalau ini gagal, kolom pencarian terasa rusak
-// padahal datanya ada.
-assert.ok(matchesPlate('B 9875 UEX', 'b9875'), 'spasi harus diabaikan');
-assert.ok(matchesPlate('B 9875 UEX', 'B 9875'));
-assert.ok(matchesPlate('B 9875 UEX', 'uex'), 'huruf kecil harus cocok');
-assert.ok(matchesPlate('B 9875 UEX', ''), 'kueri kosong menampilkan semua');
-assert.ok(matchesPlate('B 9875 UEX', '   '), 'spasi saja sama dengan kueri kosong');
-assert.ok(!matchesPlate('B 9875 UEX', 'B 9890'));
+// Urutan dan pencocokan nomor polisi kini diuji di utils/format.check.ts —
+// keduanya dipakai bersama halaman Konsumsi BBM, jadi tempatnya bukan lagi di
+// sini. Yang tersisa di bawah adalah perakitan daftar barisnya.
 
 // --- daftar baris yang tampil ----------------------------------------------
 const rows = [{ y: 'B 9875 UEX' }, { y: 'A 9828 RA' }, { y: 'B 9875 UEX' }, { y: 'B 9374 TFY' }];

@@ -24,7 +24,7 @@ import { probeDiagnostics, WELL_KNOWN_DIAGNOSTICS } from '../api/fetchers/probe'
 import { toUtcRange } from '../utils/date-range';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
-import { esc, clamp, token, int, one, upto1 } from '../utils/format';
+import { esc, clamp, token, int, one, upto1, matchesPlate } from '../utils/format';
 import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
 import { summarizeFuel } from '../analytics/summary';
 import type { ViewCtx } from './registry';
@@ -47,7 +47,11 @@ import {
   groupByDay,
   dayKey,
   sumValues,
+  sortFuelRows,
+  topByEfficiency,
   type FuelSource,
+  type FuelRow,
+  type FuelSortKey,
 } from '../analytics/fuel';
 
 // Dari mana liternya datang. Empat sumber, akurasi jauh berbeda — dan halaman
@@ -140,6 +144,19 @@ interface Snapshot {
 export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
   let settings = loadSettings(ctx.database);
   let snapshot: Snapshot | null = null;
+
+  // Keadaan tampilan tabel & grafik. Terpisah dari `settings` karena ini bukan
+  // asumsi perhitungan — tidak mengubah satu angka pun, hanya urutan dan mana
+  // yang terlihat, jadi tidak perlu disimpan per database.
+  let query = '';
+  let sortKey: FuelSortKey = 'litres';
+  let sortDir: 1 | -1 = -1;
+  let chartDir: 'boros' | 'hemat' = 'boros';
+  /** Baris hasil render terakhir, supaya cari/urut tidak perlu menghitung ulang
+   *  seluruh halaman (dan tidak merebut fokus dari kolom cari). */
+  let lastRows: FuelRow[] = [];
+  let lastCurrency = '';
+  let lastHasCost = false;
 
   // Panel penjelasan yang terbuka bertahan melewati render ulang: mengubah rasio
   // BBM tidak boleh membanting tutup panel yang menjelaskan rasio itu.
@@ -391,8 +408,23 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
 
       ${renderControls(snap, settings)}
 
+      <div class="fa-fuel-toolbar">
+        <input type="search" id="fa-fuel-search" class="fa-fuel-search"
+               placeholder="Cari nomor polisi…" aria-label="Cari unit berdasarkan nomor polisi"
+               value="${esc(query)}">
+        <span class="fa-fuel-count" aria-live="polite"></span>
+        <span class="fa-fuel-hint">Menyaring grafik dan tabel di bawah sekaligus.</span>
+      </div>
+
       <div class="fa-fuel-panel">
-        <div class="fa-fuel-panel-title">Efisiensi per unit (L/100km)</div>
+        <div class="fa-fuel-panel-head">
+          <div class="fa-fuel-panel-title">Efisiensi per unit (L/100km)</div>
+          <div class="fa-fuel-seg" role="group" aria-label="Urutan grafik efisiensi">
+            <button type="button" data-chartdir="boros" class="fa-fuel-segbtn">Terboros</button>
+            <button type="button" data-chartdir="hemat" class="fa-fuel-segbtn">Terhemat</button>
+          </div>
+        </div>
+        <p class="fa-note fa-fuel-chart-note"></p>
         <div class="fa-fuel-chart"><canvas id="fa-fuel-bar"></canvas></div>
       </div>
 
@@ -401,47 +433,128 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
         <div class="fa-fuel-chart"><canvas id="fa-fuel-trend"></canvas></div>
       </div>
 
-      <table class="fa-table">
-        <thead><tr>
-          <th>Unit</th><th>Jarak (km)</th><th>BBM (L)</th><th>L/100km</th>
-          <th>km/L${blocked ? '<small class="fa-fuel-th-note">tidak tersedia</small>' : ''}</th>
-          ${cost ? '<th>Biaya</th>' : ''}
-        </tr></thead>
-        <tbody>
-          ${
-            rows.length === 0
-              ? `<tr><td colspan="${cost ? 6 : 5}">Tidak ada unit dengan data pada periode ini.</td></tr>`
-              : rows
-                  .map(
-                    (r) => `<tr>
-                      <td>${esc(r.name)}</td>
-                      <td>${fmt(r.km, 0)}</td>
-                      <td>${fmt(r.litres)}</td>
-                      <td>${r.efficiency === null ? '—' : fmt(r.efficiency)}</td>
-                      <td>${r.economy === null ? '—' : fmt(r.economy, 2)}</td>
-                      ${cost ? `<td>${currency} ${fmt(r.cost ?? 0, 0)}</td>` : ''}
-                    </tr>`
-                  )
-                  .join('')
-          }
-        </tbody>
-      </table>
+      <div class="fa-fuel-tablewrap">
+        <table class="fa-table fa-fuel-table">
+          <thead><tr>
+            ${tableHead(blocked, !!cost)}
+          </tr></thead>
+          <tbody id="fa-fuel-tbody"></tbody>
+        </table>
+      </div>
+      <p class="fa-note">Klik judul kolom untuk mengurutkan. Unit yang datanya tidak terukur selalu di bawah — bukan nol, melainkan tidak diketahui.</p>
     `);
 
-    drawBarChart(rows);
+    lastRows = rows;
+    lastCurrency = currency;
+    lastHasCost = !!cost;
+
+    refresh(); // isi tbody + grafik dari pencarian & urutan yang berlaku
     drawTrendChart(snap, settings);
     bindControls();
+    bindTableControls();
   }
 
-  function drawBarChart(rows: { name: string; efficiency: number | null }[]): void {
-    const usable = rows.filter((r) => r.efficiency !== null).slice(0, CHART_UNITS);
+  /** Kolom tabel. `value` dipakai untuk mengurutkan, `cell` untuk menampilkan —
+   *  memisahkannya mencegah pengurutan berjalan di atas teks yang sudah
+   *  diformat, yang akan mengurutkan "1.200" sebelum "900". */
+  function columns(hasCost: boolean): { key: FuelSortKey; label: string; num: boolean; show: boolean }[] {
+    return [
+      { key: 'name', label: 'Unit', num: false, show: true },
+      { key: 'km', label: 'Jarak (km)', num: true, show: true },
+      { key: 'litres', label: 'BBM (L)', num: true, show: true },
+      { key: 'efficiency', label: 'L/100km', num: true, show: true },
+      { key: 'economy', label: 'km/L', num: true, show: true },
+      { key: 'cost', label: 'Biaya', num: true, show: hasCost },
+    ].filter((c) => c.show) as { key: FuelSortKey; label: string; num: boolean; show: boolean }[];
+  }
+
+  function tableHead(blocked: string | null, hasCost: boolean): string {
+    return columns(hasCost)
+      .map((c) => {
+        const active = c.key === sortKey;
+        const arrow = active ? (sortDir === 1 ? ' ↑' : ' ↓') : '';
+        const note = c.key === 'economy' && blocked ? '<small class="fa-fuel-th-note">tidak tersedia</small>' : '';
+        return `<th scope="col"${c.num ? ' class="fa-fuel-num"' : ''}${active ? ` aria-sort="${sortDir === 1 ? 'ascending' : 'descending'}"` : ''}>
+          <button type="button" class="fa-fuel-sort" data-sort="${c.key}">${esc(c.label)}${arrow}</button>${note}
+        </th>`;
+      })
+      .join('');
+  }
+
+  /**
+   * Menggambar ulang grafik dan isi tabel dari `lastRows`, mengikuti pencarian
+   * dan urutan yang berlaku.
+   *
+   * SENGAJA tidak memanggil render(): render() menulis ulang seluruh innerHTML,
+   * yang akan menghancurkan kolom cari beserta fokus dan posisi kursornya di
+   * tengah pengguna mengetik.
+   */
+  function refresh(): void {
+    const shown = query ? lastRows.filter((r) => matchesPlate(r.name, query)) : lastRows;
+
+    const countEl = container.querySelector<HTMLElement>('.fa-fuel-count');
+    if (countEl) {
+      countEl.textContent = query
+        ? `${int(shown.length)} dari ${int(lastRows.length)} unit`
+        : lastRows.length
+          ? `${int(lastRows.length)} unit`
+          : '';
+    }
+
+    const tbody = container.querySelector<HTMLElement>('#fa-fuel-tbody');
+    if (tbody) {
+      const cols = columns(lastHasCost);
+      tbody.innerHTML =
+        shown.length === 0
+          ? `<tr><td colspan="${cols.length}">${
+              lastRows.length === 0
+                ? 'Tidak ada unit dengan data pada periode ini.'
+                : `Tidak ada unit yang cocok dengan &quot;${esc(query)}&quot;.`
+            }</td></tr>`
+          : sortFuelRows(shown, sortKey, sortDir)
+              .map(
+                (r) => `<tr>
+                  <td>${esc(r.name)}</td>
+                  <td class="fa-fuel-num">${fmt(r.km, 0)}</td>
+                  <td class="fa-fuel-num">${fmt(r.litres)}</td>
+                  <td class="fa-fuel-num">${r.efficiency === null ? '—' : fmt(r.efficiency)}</td>
+                  <td class="fa-fuel-num">${r.economy === null ? '—' : fmt(r.economy, 2)}</td>
+                  ${lastHasCost ? `<td class="fa-fuel-num">${lastCurrency} ${fmt(r.cost ?? 0, 0)}</td>` : ''}
+                </tr>`
+              )
+              .join('');
+    }
+
+    for (const btn of container.querySelectorAll<HTMLButtonElement>('.fa-fuel-segbtn')) {
+      btn.setAttribute('aria-pressed', String(btn.dataset.chartdir === chartDir));
+    }
+    drawBarChart(shown);
+  }
+
+  function drawBarChart(rows: FuelRow[]): void {
+    // Sebelumnya grafik ini mengambil 20 unit teratas menurut LITER, bukan
+    // efisiensi — judulnya bilang "Efisiensi per unit" tapi yang diurutkan
+    // konsumsi total, jadi unit besar selalu di depan hanya karena besar.
+    const usable = topByEfficiency(rows, chartDir, CHART_UNITS);
     const holder = container.querySelector<HTMLCanvasElement>('#fa-fuel-bar')?.parentElement;
+    const note = container.querySelector<HTMLElement>('.fa-fuel-chart-note');
+    if (note) {
+      note.textContent =
+        usable.length === 0
+          ? ''
+          : chartDir === 'boros'
+            ? `${int(usable.length)} unit dengan L/100km tertinggi — angka besar berarti lebih boros.`
+            : `${int(usable.length)} unit dengan L/100km terendah — ini patokan terbaik armada, bukan yang bermasalah.`;
+    }
     if (!holder) return;
+    barChart?.destroy();
+    barChart = null;
     if (usable.length === 0) {
       // A chart of zeros would imply the fleet burns nothing.
       holder.innerHTML = '<p class="fa-empty">Belum ada unit dengan jarak tempuh, efisiensi tidak bisa dihitung.</p>';
       return;
     }
+    if (!holder.querySelector('canvas')) holder.innerHTML = '<canvas id="fa-fuel-bar"></canvas>';
     barChart = new Chart(holder.querySelector('canvas')!, {
       type: 'bar',
       data: {
@@ -480,6 +593,52 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
         plugins: { legend: { display: false } },
       },
     });
+  }
+
+  /** Kolom cari + tombol urut. Node-nya dibuang tiap render(), jadi tidak ada
+   *  yang perlu dilepas saat cleanup — listener ikut mati bersama elemennya. */
+  function bindTableControls(): void {
+    const search = container.querySelector<HTMLInputElement>('#fa-fuel-search');
+    search?.addEventListener('input', () => {
+      query = search.value;
+      refresh();
+    });
+
+    for (const btn of container.querySelectorAll<HTMLButtonElement>('.fa-fuel-segbtn')) {
+      btn.addEventListener('click', () => {
+        chartDir = btn.dataset.chartdir === 'hemat' ? 'hemat' : 'boros';
+        refresh();
+      });
+    }
+
+    bindSortButtons();
+  }
+
+  /**
+   * Menekan judul kolom menggambar ulang judul itu sendiri (panah + aria-sort),
+   * jadi tombolnya jadi node baru dan harus diikat ulang.
+   *
+   * Satu listener terdelegasi pada <thead> akan menghindari pengikatan ulang,
+   * tapi menambah satu listener yang harus dilepas saat cleanup. Di sini node-nya
+   * dibuang bersama tabel, jadi tidak ada yang bocor.
+   */
+  function bindSortButtons(): void {
+    for (const btn of container.querySelectorAll<HTMLButtonElement>('.fa-fuel-sort')) {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.sort as FuelSortKey;
+        if (key === sortKey) {
+          sortDir = sortDir === 1 ? -1 : 1;
+        } else {
+          sortKey = key;
+          // Nama enak dibaca A-Z; angka hampir selalu dicari yang terbesar.
+          sortDir = key === 'name' ? 1 : -1;
+        }
+        const head = container.querySelector<HTMLElement>('.fa-fuel-table thead tr');
+        if (head) head.innerHTML = tableHead(economyBlocker(snapshot?.source ?? 'none'), lastHasCost);
+        bindSortButtons();
+        refresh();
+      });
+    }
   }
 
   function bindControls(): void {

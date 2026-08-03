@@ -10,6 +10,7 @@ import { fetchStatusData } from '../api/fetchers/status-data';
 import { probeDiagnostics } from '../api/fetchers/probe';
 import type { TripDTO, DeviceLite, FilterChangeDetail } from '../api/fetchers/types';
 import { defaultDateRange, toUtcRange } from '../utils/date-range';
+import { comparePlates, matchesPlate } from '../utils/format';
 import {
   buildTripDetails,
   fuelPerTrip,
@@ -60,32 +61,6 @@ const ZOOM_STEP = 0.8;
 /** Tinggi satu baris unit. Di bawah ~24px nama nomor polisi mulai bertumpuk —
  *  persis kondisi yang membuat grafik ini tidak terbaca sebelumnya. */
 const ROW_PX = 28;
-
-/**
- * Urutan nomor polisi. `numeric` yang menentukan: tanpa itu "B 10000 XX" jatuh
- * sebelum "B 9374 TFY" karena "1" < "9" secara leksikal.
- *
- * Nama unit adalah teks bebas yang diketik pelanggan di MyGeotab, jadi isinya
- * campur — plat Indonesia ("B 9875 UEX") berdampingan dengan nomor rangka
- * ("MHCFVR34USJ001916"). Perbandingan natural menangani keduanya tanpa perlu
- * mem-parse format plat, yang toh akan gagal pada armada yang menamai unitnya
- * dengan cara lain.
- */
-export function comparePlates(a: string, b: string): number {
-  return a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' });
-}
-
-/**
- * Pencocokan pencarian: abaikan besar-kecil huruf DAN semua karakter bukan
- * huruf/angka, sehingga "b9875" dan "B 9875" sama-sama menemukan "B 9875 UEX".
- * Orang mengetik plat tanpa spasi; memaksa mereka menebak spasinya membuat
- * kolom pencarian terasa rusak.
- */
-export function matchesPlate(name: string, query: string): boolean {
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const q = norm(query);
-  return q === '' || norm(name).includes(q);
-}
 
 /** Nama unit yang muncul di data, tersaring pencarian lalu diurutkan. */
 export function visibleDeviceNames(bars: { y: string }[], query: string): string[] {

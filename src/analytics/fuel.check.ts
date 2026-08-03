@@ -1,5 +1,8 @@
 import assert from 'node:assert';
 import {
+  sortFuelRows,
+  topByEfficiency,
+  type FuelRow,
   pickFuelSource,
   consumptionFromCumulative,
   consumptionFromLevel,
@@ -214,5 +217,63 @@ for (const [name, value] of [
 
 // A zero rate must not poison the arithmetic either.
 assert.strictEqual(sumValues(estimateFromDistance([trip('v1', 100)], 0)), 0, 'a 0 ratio gives 0 L, not NaN');
+
+
+// --- pengurutan & pemilihan baris tabel ------------------------------------
+{
+  const r = (
+    name: string,
+    km: number,
+    litres: number,
+    efficiency: number | null,
+    economy: number | null,
+    cost: number | null = null
+  ): FuelRow => ({ id: name, name, km, litres, efficiency, economy, cost });
+
+  const rows = [
+    r('B 9374 TFY', 1200, 300, 25, 4),
+    r('A 9828 RA', 800, 360, 45, 2.2),
+    r('MHC001', 0, 0, null, null),        // tidak pernah jalan: laju tak diketahui
+    r('B 9875 UEX', 2000, 240, 12, 8.3),
+  ];
+
+  // Menurun pada angka.
+  assert.deepStrictEqual(
+    sortFuelRows(rows, 'litres', -1).map((x) => x.name),
+    ['A 9828 RA', 'B 9374 TFY', 'B 9875 UEX', 'MHC001']
+  );
+
+  // Sel kosong SELALU di bawah, ke arah mana pun. Kalau null diperlakukan nol,
+  // unit tanpa data akan memuncaki daftar "paling irit" — pujian untuk unit
+  // yang sebenarnya tidak terukur sama sekali.
+  assert.equal(sortFuelRows(rows, 'efficiency', 1)[0].name, 'B 9875 UEX');
+  assert.equal(sortFuelRows(rows, 'efficiency', 1).at(-1)!.name, 'MHC001', 'null harus tetap di bawah saat menaik');
+  assert.equal(sortFuelRows(rows, 'efficiency', -1).at(-1)!.name, 'MHC001', 'null harus tetap di bawah saat menurun');
+  assert.equal(sortFuelRows(rows, 'economy', 1).at(-1)!.name, 'MHC001');
+
+  // Nama: urutan natural, bukan leksikal.
+  assert.deepStrictEqual(
+    sortFuelRows(rows, 'name', 1).map((x) => x.name),
+    ['A 9828 RA', 'B 9374 TFY', 'B 9875 UEX', 'MHC001']
+  );
+
+  // Tidak mengubah array aslinya — render dipanggil berkali-kali dari sumber
+  // yang sama, dan sort in-place akan membuat urutannya menetap diam-diam.
+  const before = rows.map((x) => x.name);
+  sortFuelRows(rows, 'km', 1);
+  assert.deepStrictEqual(rows.map((x) => x.name), before, 'sortFuelRows harus mengembalikan salinan');
+
+  // --- grafik: "terhemat" adalah UNIT LAIN, bukan daftar yang dibalik -------
+  const boros = topByEfficiency(rows, 'boros', 2).map((x) => x.name);
+  const hemat = topByEfficiency(rows, 'hemat', 2).map((x) => x.name);
+  assert.deepStrictEqual(boros, ['A 9828 RA', 'B 9374 TFY']);
+  assert.deepStrictEqual(hemat, ['B 9875 UEX', 'B 9374 TFY']);
+  assert.notDeepStrictEqual(boros, [...hemat].reverse(), 'terhemat bukan sekadar terboros yang dibalik');
+
+  // Unit tanpa efisiensi terukur tidak pernah masuk grafik: batang nol terbaca
+  // sebagai "tidak membakar apa-apa".
+  assert.ok(!topByEfficiency(rows, 'hemat', 10).some((x) => x.name === 'MHC001'));
+  assert.equal(topByEfficiency([], 'boros', 20).length, 0);
+}
 
 console.log('fuel.check.ts: PASS');
