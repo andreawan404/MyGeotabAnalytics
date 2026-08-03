@@ -139,3 +139,121 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* --- feed insiden + peta berdampingan -------------------------------------- */
+
+/* Peta di samping daftar, bukan tab baru: memindahkan orang keluar dashboard di
+   tengah menelusuri insiden berarti kehilangan filter, zoom, dan tempatnya
+   berhenti membaca. minmax(0,...) wajib — tanpanya kolom tabel menolak menyusut
+   dan grid-nya melebar keluar panel. */
+.fa-sec-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.fa-sec-feed {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.fa-sec-mappanel {
+  position: sticky;
+  top: 0.5rem; /* peta tetap terlihat saat daftar insiden digulir */
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--fa-surface);
+}
+
+.fa-sec-map-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--fa-border);
+}
+
+.fa-sec-map-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--fa-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Tautan keluar tetap disediakan — sebagian orang memang perlu membukanya di
+   peta sungguhan untuk rute atau street view. Sekarang jadi pilihan, bukan
+   satu-satunya cara. */
+.fa-sec-map-ext {
+  flex: none;
+  font-size: 0.72rem;
+  color: var(--fa-accent);
+  white-space: nowrap;
+}
+
+.fa-sec-map-canvas {
+  height: 280px;
+  background: var(--fa-bg);
+}
+
+.fa-sec-map-hint,
+.fa-sec-map-note {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--fa-muted);
+}
+
+/* --- tombol Lokasi --------------------------------------------------------- */
+
+.fa-sec-loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  min-height: 32px;
+  padding: 0 0.65rem;
+  border: 1px solid var(--fa-border);
+  border-radius: 999px;
+  background: var(--fa-surface);
+  color: var(--fa-accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fa-sec-loc:hover {
+  border-color: var(--fa-accent);
+  background: var(--fa-low-bg);
+}
+
+.fa-sec-loc:focus-visible {
+  outline: 2px solid var(--fa-accent);
+  outline-offset: 2px;
+}
+
+/* Baris yang sedang ditampilkan di peta. Ditandai isian penuh DAN aria-pressed,
+   jadi tidak bergantung pada persepsi warna saja. */
+.fa-sec-loc[aria-pressed='true'] {
+  background: var(--fa-accent);
+  border-color: var(--fa-accent);
+  color: #fff;
+}
+
+/* Iframe MyGeotab sering sempit; di bawah ini dua kolom membuat keduanya
+   sama-sama tidak terbaca, jadi peta turun ke bawah daftar. */
+@media (max-width: 900px) {
+  .fa-sec-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fa-sec-mappanel {
+    position: static;
+  }
+}

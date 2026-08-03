@@ -14,6 +14,8 @@
 // bug. Buttons are user-initiated, always.
 
 import '../styles/security.css';
+import * as L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 import { fetchExceptionEvents } from '../api/fetchers/exception-event';
 import { fetchZones } from '../api/fetchers/zone';
@@ -123,6 +125,13 @@ function formatTime(iso: string): string {
   return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+/** Ikon pin, inline. Tidak ada pustaka ikon dan tidak ada permintaan jaringan
+ *  untuk satu gambar 16px. `currentColor` supaya ikut warna tombolnya. */
+const PIN_SVG =
+  '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">' +
+  '<path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/>' +
+  '</svg>';
+
 function osmHref(lat: number, lon: number): string {
   return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`;
 }
@@ -175,6 +184,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
 
   function render(): void {
     if (!latest) return;
+    destroyMap(); // innerHTML di bawah membuang node peta; lepaskan dulu instance-nya
     const { events, zones, statuses, drivers, devices, trips, rules, filter } = latest;
 
     const deviceName = new Map(devices.map((d) => [d.id, d.name]));
@@ -316,7 +326,20 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
 
       <section class="fa-sec-panel">
         <h2 class="fa-sec-title">Insiden Terbaru</h2>
-        ${renderFeed(incidents, nameOf, statusOf)}
+        <div class="fa-sec-split">
+          <div class="fa-sec-feed">${renderFeed(incidents, nameOf, statusOf)}</div>
+          <aside class="fa-sec-mappanel" aria-label="Peta posisi unit">
+            <div class="fa-sec-map-head">
+              <span class="fa-sec-map-title" data-sec="map-title">Posisi unit</span>
+              <a class="fa-sec-map-ext" data-sec="map-ext" target="_blank" rel="noopener" hidden>Buka di OpenStreetMap</a>
+            </div>
+            <div class="fa-sec-map-canvas" data-sec="map"></div>
+            <p class="fa-sec-map-hint" data-sec="map-hint">
+              Tekan <strong>Lokasi</strong> pada salah satu insiden untuk melihat posisinya di sini.
+            </p>
+            <p class="fa-note fa-sec-map-note" data-sec="map-note" hidden></p>
+          </aside>
+        </div>
       </section>
 
       ${filter.zoneId ? renderBreaches(selectedZone, breaches, nameOf) : ''}
@@ -391,8 +414,15 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
       .map((i) => {
         const status = statusOf.get(i.deviceId);
         const hasFix = status && !(status.lat === 0 && status.lon === 0);
+        // Tombol, bukan tautan ke tab baru: memindahkan orang keluar dari
+        // dashboard di tengah menelusuri insiden berarti kehilangan filter,
+        // zoom, dan tempatnya berhenti membaca. Petanya dibuka di sebelah.
         const location = hasFix
-          ? `<a href="${osmHref(status!.lat, status!.lon)}" target="_blank" rel="noopener">Lokasi</a>`
+          ? `<button type="button" class="fa-sec-loc" aria-pressed="false"
+                     data-lat="${status!.lat}" data-lon="${status!.lon}"
+                     data-unit="${esc(nameOf(i.deviceId))}" data-at="${esc(formatTime(i.at))}">
+               ${PIN_SVG}<span>Lokasi</span>
+             </button>`
           : '<span class="fa-sec-muted">Tidak ada posisi</span>';
         return `<tr>
           <td>${esc(formatTime(i.at))}</td>
@@ -544,6 +574,98 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
   };
   ctx.rootEl.addEventListener('dashboard:profile-change', onProfileChange);
 
+  // --- peta posisi -----------------------------------------------------------
+  //
+  // Leaflet sudah jadi dependensi (heat map), jadi tidak ada tambahan bundle.
+  // Instance-nya dibuat MALAS pada penekanan tombol pertama: sebagian besar
+  // kunjungan ke halaman ini tidak pernah membuka peta, dan Leaflet yang
+  // dipasang di dalam elemen selebar 0px akan merender petak abu — bug yang
+  // sudah dua kali menggigit proyek ini.
+  let map: L.Map | null = null;
+  let marker: L.CircleMarker | null = null;
+
+  function destroyMap(): void {
+    map?.remove();
+    map = null;
+    marker = null;
+  }
+
+  function pick(name: string): HTMLElement | null {
+    return container.querySelector<HTMLElement>(`[data-sec="${name}"]`);
+  }
+
+  function showLocation(btn: HTMLButtonElement): void {
+    const lat = Number(btn.dataset.lat);
+    const lon = Number(btn.dataset.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    for (const b of container.querySelectorAll('.fa-sec-loc')) b.setAttribute('aria-pressed', 'false');
+    btn.setAttribute('aria-pressed', 'true');
+
+    const host = pick('map');
+    if (!host) return;
+    pick('map-hint')?.setAttribute('hidden', '');
+
+    if (!map) {
+      map = L.map(host, { attributionControl: true }).setView([lat, lon], 15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
+      }).addTo(map);
+    }
+
+    // circleMarker, bukan L.marker: ikon bawaan Leaflet memuat PNG lewat URL
+    // relatif yang pecah di bawah bundler — penanda tak terlihat tanpa error.
+    // Bentuk vektor tidak punya aset untuk hilang.
+    marker?.remove();
+    marker = L.circleMarker([lat, lon], {
+      radius: 9,
+      color: '#fff',
+      weight: 3,
+      fillColor: '#b91c1c',
+      fillOpacity: 1,
+    }).addTo(map);
+
+    map.invalidateSize(); // host baru saja terlihat; tanpa ini ubinnya abu
+    map.setView([lat, lon], Math.max(map.getZoom(), 15), { animate: true });
+
+    const unit = btn.dataset.unit ?? 'Unit';
+    const at = btn.dataset.at ?? '';
+    const title = pick('map-title');
+    if (title) title.textContent = unit;
+
+    const ext = pick('map-ext') as HTMLAnchorElement | null;
+    if (ext) {
+      ext.href = osmHref(lat, lon);
+      ext.hidden = false;
+    }
+
+    const note = pick('map-note');
+    if (note) {
+      // Yang ditampilkan adalah posisi TERAKHIR unit, bukan titik kejadian —
+      // MyGeotab tidak menyimpan koordinat pada ExceptionEvent. Menyamakan
+      // keduanya akan membuat orang mencari bukti di lokasi yang salah.
+      note.textContent =
+        `Ini posisi terakhir yang dilaporkan ${unit}, bukan titik kejadiannya — ` +
+        `MyGeotab tidak menyimpan koordinat pada insiden. Insiden tercatat ${at}. ` +
+        `Koordinat ${lat.toFixed(5)}, ${lon.toFixed(5)}.`;
+      note.hidden = false;
+    }
+  }
+
+  function onFeedClick(e: Event): void {
+    const btn = (e.target as HTMLElement | null)?.closest<HTMLButtonElement>('.fa-sec-loc');
+    if (btn) showLocation(btn);
+  }
+
+  // Leaflet mengukur wadahnya sekali, saat dibuat. Kembali ke view ini setelah
+  // pindah halaman meninggalkan ukuran lama kalau tidak diukur ulang.
+  function onViewShown(): void {
+    if (container.clientWidth > 0) map?.invalidateSize();
+  }
+
+  container.addEventListener('click', onFeedClick);
+  ctx.rootEl.addEventListener('dashboard:view-shown', onViewShown);
   container.addEventListener('change', onChange);
   const offFilter = onFilterChangeVisible(ctx.rootEl, container, load);
   load(getCurrentFilter());
