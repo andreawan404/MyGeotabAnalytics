@@ -433,7 +433,7 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
         <div class="fa-fuel-chart"><canvas id="fa-fuel-trend"></canvas></div>
       </div>
 
-      <div class="fa-fuel-tablewrap">
+      <div class="fa-scroll-table fa-fuel-tablewrap">
         <table class="fa-table fa-fuel-table">
           <thead><tr>
             ${tableHead(blocked, !!cost)}

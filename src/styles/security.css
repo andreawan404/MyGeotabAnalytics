@@ -53,11 +53,12 @@
   margin-top: 0.5rem;
 }
 
-/* Wide feed/breach tables scroll inside the panel instead of pushing the whole
-   dashboard sideways in the MyGeotab iframe. */
+/* Gulir horizontal dulu diurus dengan `display: block; overflow-x: auto` pada
+   tabelnya sendiri. Itu yang mematikan judul kolom sticky begitu tabelnya
+   dibungkus area gulir — penjelasan lengkapnya di .fa-scroll-table
+   (dashboard.css). Kedua sumbu kini milik pembungkus; di sini tinggal mencegah
+   sel terpecah jadi banyak baris di iframe yang sempit. */
 .fa-sec-panel .fa-table {
-  display: block;
-  overflow-x: auto;
   white-space: nowrap;
 }
 
@@ -256,4 +257,54 @@
   .fa-sec-mappanel {
     position: static;
   }
+}
+
+/* --- tinggi area gulir ------------------------------------------------------
+   Satu nilai dipakai DUA elemen: daftar insiden dan panel peta di sebelahnya.
+   Itulah yang membuat kedua kolom berakhir rata di bawah — kalau masing-masing
+   punya angka sendiri, keduanya pasti melenceng begitu salah satunya diubah. */
+.fa-sec-split {
+  --sec-pane-h: 400px;
+}
+
+.fa-sec-feedwrap {
+  --fa-scroll-h: var(--sec-pane-h);
+}
+
+/* Panel peta dikunci ke tinggi yang sama; kanvasnya mengambil sisa ruang
+   setelah kepala dan catatan, jadi tidak ada angka tinggi kedua yang harus
+   dijaga tetap cocok. */
+.fa-sec-mappanel {
+  height: var(--sec-pane-h);
+  display: flex;
+  flex-direction: column;
+}
+
+.fa-sec-map-canvas {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+/* Catatan bisa 3 baris; batasi supaya tidak memakan petanya. */
+.fa-sec-map-hint,
+.fa-sec-map-note {
+  flex: none;
+  max-height: 6.5em;
+  overflow-y: auto;
+}
+
+/* Tabel pelanggaran geofence: lebih pendek, biasanya isinya sedikit. */
+.fa-sec-breachwrap {
+  --fa-scroll-h: 320px;
+}
+
+/* Kontak darurat adalah grid kartu, bukan tabel — tidak ada judul kolom yang
+   perlu dibuat sticky, jadi cukup dibatasi dan digulirkan. Padding kanan
+   memberi ruang untuk bilah gulir supaya kartu terakhir tidak tertutup. */
+.fa-sec-contacts {
+  max-height: 420px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.25rem;
 }

@@ -200,30 +200,10 @@
   outline-offset: -2px;
 }
 
-/* Daftar unit bisa ratusan baris; batasi tingginya dan gulirkan isinya supaya
-   catatan di bawah tabel tidak terdorong jauh dari layar. */
+/* Pola gulir tabel kini bersama: .fa-scroll-table di dashboard.css. Yang
+   tersisa di sini hanya tinggi khas halaman ini. */
 .fa-fuel-tablewrap {
-  box-sizing: border-box; /* 420px berarti 420px, bukan 420 + 2px bingkai */
-  max-height: 420px;
-  overflow-y: auto;
-  border: 1px solid var(--fa-border);
-  border-radius: 8px;
-  overscroll-behavior: contain;
-}
-
-.fa-fuel-tablewrap .fa-table {
-  border: 0; /* pembungkusnya yang punya bingkai */
-  border-radius: 0;
-}
-
-/* Judul kolom tetap terlihat saat menggulir — tanpa ini, menggulir ke unit
-   ke-80 berarti menebak kolom mana yang sedang dibaca. */
-.fa-fuel-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--fa-surface);
-  box-shadow: inset 0 -1px 0 var(--fa-border);
+  --fa-scroll-h: 420px;
 }
 
 .fa-fuel-sort {

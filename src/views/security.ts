@@ -439,10 +439,15 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
         ? `<p class="fa-sec-muted fa-sec-foot">Menampilkan ${FEED_LIMIT} dari ${incidents.length} insiden terbaru.</p>`
         : '';
 
-    return `<table class="fa-table">
-        <thead><tr><th>Waktu</th><th>Unit</th><th>Kategori</th><th>Keparahan</th><th>Posisi Terakhir</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>${more}`;
+    // Yang tergulir daftarnya, bukan halamannya: 100 insiden x ~50px membuat
+    // halaman menumpuk ribuan piksel, dan KPI di atas sudah lama hilang dari
+    // layar saat pengguna sampai ke baris yang dicarinya.
+    return `<div class="fa-scroll-table fa-sec-feedwrap">
+        <table class="fa-table">
+          <thead><tr><th>Waktu</th><th>Unit</th><th>Kategori</th><th>Keparahan</th><th>Posisi Terakhir</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>${more}`;
   }
 
   function renderBreaches(
@@ -455,7 +460,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
         <p class="fa-empty">Zona yang dipilih tidak ditemukan di database ini.</p></section>`;
     }
     const body = breaches.length
-      ? `<table class="fa-table">
+      ? `<div class="fa-scroll-table fa-sec-breachwrap"><table class="fa-table">
           <thead><tr><th>Waktu</th><th>Unit</th><th>Kejadian</th></tr></thead>
           <tbody>${breaches
             .slice()
@@ -468,7 +473,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
               </tr>`
             )
             .join('')}</tbody>
-        </table>`
+        </table></div>`
       : `<p class="fa-empty">Tidak ada trip yang mulai atau berakhir di dalam zona ini pada rentang tanggal terpilih.${
           zone.points.length ? '' : ' Zona ini tidak punya poligon, jadi tidak ada yang bisa dihitung.'
         }</p>`;
