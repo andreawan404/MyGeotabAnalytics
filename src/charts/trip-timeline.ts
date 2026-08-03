@@ -60,8 +60,6 @@ const ZOOM_STEP = 0.8;
 /** Tinggi satu baris unit. Di bawah ~24px nama nomor polisi mulai bertumpuk —
  *  persis kondisi yang membuat grafik ini tidak terbaca sebelumnya. */
 const ROW_PX = 28;
-/** Jumlah label pada strip sumbu waktu yang dibekukan. */
-const AXIS_TICKS = 6;
 
 /**
  * Urutan nomor polisi. `numeric` yang menentukan: tanpa itu "B 10000 XX" jatuh
@@ -94,21 +92,6 @@ export function visibleDeviceNames(bars: { y: string }[], query: string): string
   return [...new Set(bars.map((b) => b.y))].filter((n) => matchesPlate(n, query)).sort(comparePlates);
 }
 
-/**
- * Posisi label untuk strip sumbu waktu yang dibekukan: `ratio` adalah 0..1
- * melintasi area plot, `at` epoch-ms-nya.
- *
- * Mengembalikan timestamp, bukan teks — pemformatan lokal tinggal di lapisan
- * DOM supaya check ini tidak bergantung pada data locale ICU Node.
- */
-export function axisTicks(win: TimeWindow, count = AXIS_TICKS): { ratio: number; at: number }[] {
-  const span = win.max - win.min;
-  if (!(span > 0) || count < 2) return [{ ratio: 0, at: win.min }];
-  return Array.from({ length: count }, (_, i) => {
-    const ratio = i / (count - 1);
-    return { ratio, at: win.min + span * ratio };
-  });
-}
 
 // The cumulative fuel counter is resolved by resolveCumulativeFuelDiagnosticId
 // (diagnostic.ts) — id first, name only as a fallback, shared with the BBM view
@@ -407,22 +390,40 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
     canvas.setAttribute('aria-label', ariaSummary(details));
   }
 
-  /** Menggambar ulang strip sumbu waktu yang dibekukan agar sejajar dengan area
-   *  plot kanvas — `chartArea.left` adalah ruang yang dipakai label nama unit. */
+  /**
+   * Menggambar ulang strip sumbu waktu yang dibekukan.
+   *
+   * Posisinya dibaca dari skala x Chart.js sendiri — `scales.x.ticks` beserta
+   * `getPixelForValue` — bukan dihitung sebagai enam titik merata. Itu bukan
+   * detail: gridline vertikal digambar Chart.js pada tick MILIKNYA, jadi
+   * himpunan tick kedua yang dihitung sendiri akan meleset dari garisnya, dan
+   * label yang tidak sejajar dengan garisnya lebih menyesatkan daripada tidak
+   * ada label sama sekali. Dengan sumber yang sama, kesejajarannya struktural.
+   *
+   * Origin kanvas dan origin strip berimpit (keduanya anak langsung .tt-root
+   * yang selebar panel), jadi piksel dari kanvas bisa dipakai apa adanya.
+   */
   function renderAxis() {
+    const sx = chart?.scales?.x;
     const area = chart?.chartArea;
-    if (!area || !(area.right > area.left)) {
+    if (!sx || !area || !(area.right > area.left)) {
       axisEl.innerHTML = '';
       return;
     }
-    const width = area.right - area.left;
-    axisEl.innerHTML = axisTicks(visible)
-      .map(({ ratio, at }) => {
-        // Label pertama dan terakhir digeser ke dalam, kalau tidak separuhnya
-        // terpotong di tepi strip.
-        const shift = ratio === 0 ? '0' : ratio === 1 ? '-100%' : '-50%';
-        return `<span class="tt-tick" style="left:${area.left + width * ratio}px;transform:translateX(${shift})">${
-          TICK_FMT.format(new Date(at))
+    // Label dipusatkan pada gridline-nya, KECUALI di dua ujung: tick paling
+    // kanan duduk tepat di tepi area plot, dan separuh labelnya akan terpotong
+    // oleh tepi panel. Di sana label digeser masuk sepenuhnya.
+    const stripW = axisEl.clientWidth;
+    const EDGE_PX = 60; // kira-kira lebar satu label "3 Agu, 16.09"
+
+    axisEl.innerHTML = sx
+      .getTicks()
+      .map((t) => {
+        const px = sx.getPixelForValue(t.value);
+        if (!Number.isFinite(px)) return '';
+        const shift = px < EDGE_PX ? '0' : px > stripW - EDGE_PX ? '-100%' : '-50%';
+        return `<span class="tt-tick" style="left:${px}px;transform:translateX(${shift})">${
+          TICK_FMT.format(new Date(t.value))
         }</span>`;
       })
       .join('');

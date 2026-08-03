@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { tripsToFloatingBars, comparePlates, matchesPlate, visibleDeviceNames, axisTicks } from './trip-timeline';
+import { tripsToFloatingBars, comparePlates, matchesPlate, visibleDeviceNames } from './trip-timeline';
 import type { TripDTO, DeviceLite } from '../api/fetchers/types';
 
 const devices: DeviceLite[] = [{ id: 'd1', name: 'Truck 1' }];
@@ -68,19 +68,9 @@ assert.deepStrictEqual(visibleDeviceNames(rows, 'b98'), ['B 9875 UEX']);
 assert.deepStrictEqual(visibleDeviceNames(rows, 'zzz'), [], 'tanpa hasil harus array kosong, bukan semua');
 assert.deepStrictEqual(visibleDeviceNames([], 'b'), []);
 
-// --- posisi label sumbu waktu ----------------------------------------------
-const ticks = axisTicks({ min: 1000, max: 2000 }, 5);
-assert.equal(ticks.length, 5);
-assert.equal(ticks[0].ratio, 0);
-assert.equal(ticks[0].at, 1000);
-assert.equal(ticks[4].ratio, 1);
-assert.equal(ticks[4].at, 2000, 'label terakhir harus tepat di ujung jendela');
-assert.equal(ticks[2].at, 1500, 'jarak antar label harus rata');
-
-// Jendela selebar nol terjadi saat data belum masuk; jangan sampai membagi nol
-// lalu menyemburkan NaN ke sumbu.
-const degenerate = axisTicks({ min: 500, max: 500 }, 5);
-assert.equal(degenerate.length, 1);
-assert.ok(degenerate.every((t) => Number.isFinite(t.ratio) && Number.isFinite(t.at)));
+// Posisi label sumbu waktu TIDAK diuji di sini: sejak strip membaca
+// scales.x.getTicks() + getPixelForValue() milik Chart.js, tidak ada lagi
+// perhitungan sendiri yang bisa meleset — kesejajarannya dengan gridline
+// bersifat struktural, bukan hasil hitungan paralel yang perlu dicocokkan.
 
 console.log('trip-timeline.check.ts: PASS');

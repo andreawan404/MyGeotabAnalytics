@@ -16,8 +16,12 @@
    tetap diam, jadi rentang waktu tidak pernah hilang saat menelusuri armada
    besar — sebelumnya semua unit dipaksa masuk ke satu kotak 320px sampai
    namanya saling bertumpuk dan tidak terbaca sama sekali. */
+/* flex 0 1 auto, bukan flex:1 — dengan max-height di .fa-timeline, area ini
+   hanya mengambil setinggi isinya lalu berhenti tumbuh di batas panel. flex:1
+   akan memaksanya selalu meregang penuh dan mengembalikan ruang kosong besar
+   yang justru sedang dihilangkan. */
 .tt-scroll {
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain; /* mentok di bawah tidak menyeret halaman induk */
@@ -130,9 +134,12 @@
   padding-top: 0.35rem;
 }
 
+/* Dipusatkan pada gridline-nya. Area plot selalu menyisakan ruang di kiri untuk
+   label nama unit, jadi label paling kiri tidak pernah terpotong. */
 .tt-tick {
   position: absolute;
   top: 0.35rem;
+  transform: translateX(-50%);
   font-size: 0.7rem;
   line-height: 1;
   color: var(--fa-muted);

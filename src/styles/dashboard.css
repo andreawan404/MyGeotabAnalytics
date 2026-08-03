@@ -485,10 +485,12 @@
   overflow: hidden;
 }
 
-/* Tinggi tetap, isinya yang tergulir (.tt-scroll). 420px memberi ruang baca
-   sekitar 13 unit sekaligus tanpa mendorong heat map dan KPI keluar layar. */
+/* Batas atas, bukan tinggi tetap: armada 4 unit tidak perlu menyisakan 300px
+   kosong di bawah grafiknya. Lewat 420px isinya yang tergulir (.tt-scroll) —
+   cukup untuk sekitar 13 unit sekaligus tanpa mendorong heat map dan KPI
+   keluar layar. */
 .fa-timeline {
-  height: 420px;
+  max-height: 420px;
 }
 
 /* Kanvas mengisi .tt-chart-wrap, yang tingginya diatur JS dari jumlah unit —
