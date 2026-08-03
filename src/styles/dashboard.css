@@ -485,10 +485,15 @@
   overflow: hidden;
 }
 
+/* Tinggi tetap, isinya yang tergulir (.tt-scroll). 420px memberi ruang baca
+   sekitar 13 unit sekaligus tanpa mendorong heat map dan KPI keluar layar. */
 .fa-timeline {
-  height: 320px;
+  height: 420px;
 }
 
+/* Kanvas mengisi .tt-chart-wrap, yang tingginya diatur JS dari jumlah unit —
+   BUKAN tinggi panel. Ini yang membuat kanvas melampaui area scroll alih-alih
+   memampatkan semua unit sampai namanya bertumpuk. */
 .fa-timeline canvas {
   width: 100% !important;
   height: 100% !important;

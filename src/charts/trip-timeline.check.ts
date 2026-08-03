@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { tripsToFloatingBars } from './trip-timeline';
+import { tripsToFloatingBars, comparePlates, matchesPlate, visibleDeviceNames, axisTicks } from './trip-timeline';
 import type { TripDTO, DeviceLite } from '../api/fetchers/types';
 
 const devices: DeviceLite[] = [{ id: 'd1', name: 'Truck 1' }];
@@ -30,5 +30,57 @@ assert.deepStrictEqual(bars[1], {
   x: [Date.parse('2026-08-01T10:00:00.000Z'), Date.parse('2026-08-01T10:15:00.000Z')],
   y: 'd2',
 });
+
+// --- urutan nomor polisi ----------------------------------------------------
+//
+// Yang paling mudah rusak: tanpa `numeric`, "B 10000 XX" jatuh SEBELUM
+// "B 9374 TFY" karena "1" < "9" secara leksikal. Itu terlihat benar sampai
+// armada punya plat lima digit.
+assert.ok(comparePlates('B 9374 TFY', 'B 10000 XX') < 0, 'urutan angka harus numerik, bukan leksikal');
+assert.ok(comparePlates('A 9828 RA', 'B 9374 TFY') < 0);
+assert.ok(comparePlates('B 9875 UEX', 'B 9890 TEZ') < 0);
+assert.equal(comparePlates('B 9875 UEX', 'b 9875 uex'), 0, 'besar-kecil huruf tidak boleh mengubah urutan');
+
+// Nama unit adalah teks bebas: plat dan nomor rangka hidup berdampingan di
+// database yang sama, dan keduanya harus tetap terurut stabil.
+const messy = ['MHCFVR34USJ001916', 'B 9875 UEX', 'A 9828 RA', 'H 8762 OH', 'B 9374 TFY'];
+assert.deepStrictEqual(
+  [...messy].sort(comparePlates),
+  ['A 9828 RA', 'B 9374 TFY', 'B 9875 UEX', 'H 8762 OH', 'MHCFVR34USJ001916']
+);
+
+// --- pencocokan pencarian ---------------------------------------------------
+//
+// Orang mengetik plat tanpa spasi. Kalau ini gagal, kolom pencarian terasa rusak
+// padahal datanya ada.
+assert.ok(matchesPlate('B 9875 UEX', 'b9875'), 'spasi harus diabaikan');
+assert.ok(matchesPlate('B 9875 UEX', 'B 9875'));
+assert.ok(matchesPlate('B 9875 UEX', 'uex'), 'huruf kecil harus cocok');
+assert.ok(matchesPlate('B 9875 UEX', ''), 'kueri kosong menampilkan semua');
+assert.ok(matchesPlate('B 9875 UEX', '   '), 'spasi saja sama dengan kueri kosong');
+assert.ok(!matchesPlate('B 9875 UEX', 'B 9890'));
+
+// --- daftar baris yang tampil ----------------------------------------------
+const rows = [{ y: 'B 9875 UEX' }, { y: 'A 9828 RA' }, { y: 'B 9875 UEX' }, { y: 'B 9374 TFY' }];
+// Duplikat dihapus (satu unit banyak perjalanan = satu baris) lalu diurutkan.
+assert.deepStrictEqual(visibleDeviceNames(rows, ''), ['A 9828 RA', 'B 9374 TFY', 'B 9875 UEX']);
+assert.deepStrictEqual(visibleDeviceNames(rows, 'b98'), ['B 9875 UEX']);
+assert.deepStrictEqual(visibleDeviceNames(rows, 'zzz'), [], 'tanpa hasil harus array kosong, bukan semua');
+assert.deepStrictEqual(visibleDeviceNames([], 'b'), []);
+
+// --- posisi label sumbu waktu ----------------------------------------------
+const ticks = axisTicks({ min: 1000, max: 2000 }, 5);
+assert.equal(ticks.length, 5);
+assert.equal(ticks[0].ratio, 0);
+assert.equal(ticks[0].at, 1000);
+assert.equal(ticks[4].ratio, 1);
+assert.equal(ticks[4].at, 2000, 'label terakhir harus tepat di ujung jendela');
+assert.equal(ticks[2].at, 1500, 'jarak antar label harus rata');
+
+// Jendela selebar nol terjadi saat data belum masuk; jangan sampai membagi nol
+// lalu menyemburkan NaN ke sumbu.
+const degenerate = axisTicks({ min: 500, max: 500 }, 5);
+assert.equal(degenerate.length, 1);
+assert.ok(degenerate.every((t) => Number.isFinite(t.ratio) && Number.isFinite(t.at)));
 
 console.log('trip-timeline.check.ts: PASS');

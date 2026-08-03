@@ -57,6 +57,59 @@ function loadStyles() {
 // deltas feel continuous rather than jumpy.
 const ZOOM_STEP = 0.8;
 
+/** Tinggi satu baris unit. Di bawah ~24px nama nomor polisi mulai bertumpuk —
+ *  persis kondisi yang membuat grafik ini tidak terbaca sebelumnya. */
+const ROW_PX = 28;
+/** Jumlah label pada strip sumbu waktu yang dibekukan. */
+const AXIS_TICKS = 6;
+
+/**
+ * Urutan nomor polisi. `numeric` yang menentukan: tanpa itu "B 10000 XX" jatuh
+ * sebelum "B 9374 TFY" karena "1" < "9" secara leksikal.
+ *
+ * Nama unit adalah teks bebas yang diketik pelanggan di MyGeotab, jadi isinya
+ * campur — plat Indonesia ("B 9875 UEX") berdampingan dengan nomor rangka
+ * ("MHCFVR34USJ001916"). Perbandingan natural menangani keduanya tanpa perlu
+ * mem-parse format plat, yang toh akan gagal pada armada yang menamai unitnya
+ * dengan cara lain.
+ */
+export function comparePlates(a: string, b: string): number {
+  return a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' });
+}
+
+/**
+ * Pencocokan pencarian: abaikan besar-kecil huruf DAN semua karakter bukan
+ * huruf/angka, sehingga "b9875" dan "B 9875" sama-sama menemukan "B 9875 UEX".
+ * Orang mengetik plat tanpa spasi; memaksa mereka menebak spasinya membuat
+ * kolom pencarian terasa rusak.
+ */
+export function matchesPlate(name: string, query: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const q = norm(query);
+  return q === '' || norm(name).includes(q);
+}
+
+/** Nama unit yang muncul di data, tersaring pencarian lalu diurutkan. */
+export function visibleDeviceNames(bars: { y: string }[], query: string): string[] {
+  return [...new Set(bars.map((b) => b.y))].filter((n) => matchesPlate(n, query)).sort(comparePlates);
+}
+
+/**
+ * Posisi label untuk strip sumbu waktu yang dibekukan: `ratio` adalah 0..1
+ * melintasi area plot, `at` epoch-ms-nya.
+ *
+ * Mengembalikan timestamp, bukan teks — pemformatan lokal tinggal di lapisan
+ * DOM supaya check ini tidak bergantung pada data locale ICU Node.
+ */
+export function axisTicks(win: TimeWindow, count = AXIS_TICKS): { ratio: number; at: number }[] {
+  const span = win.max - win.min;
+  if (!(span > 0) || count < 2) return [{ ratio: 0, at: win.min }];
+  return Array.from({ length: count }, (_, i) => {
+    const ratio = i / (count - 1);
+    return { ratio, at: win.min + span * ratio };
+  });
+}
+
 // The cumulative fuel counter is resolved by resolveCumulativeFuelDiagnosticId
 // (diagnostic.ts) — id first, name only as a fallback, shared with the BBM view
 // so the two can never disagree about which counter they are reading.
@@ -108,6 +161,10 @@ const WINDOW_FMT = new Intl.DateTimeFormat('id-ID', {
   hour: '2-digit',
   minute: '2-digit',
 });
+
+/** Label pada strip sumbu waktu. Sama isinya dengan WINDOW_FMT — dipisah karena
+ *  di sini ruangnya sempit dan formatnya mungkin perlu memendek sendiri. */
+const TICK_FMT = WINDOW_FMT;
 
 /** Chart.js tooltips are hover/tap driven. Fine for a chart, but the numbers
  *  must not exist ONLY on hover, so the same values go on the canvas as text a
@@ -197,24 +254,72 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
   hint.className = 'tt-hint';
   hint.textContent = 'Ctrl + gulir untuk zoom, seret untuk geser';
 
+  // type="search" bukan "text": tombol silang untuk mengosongkan datang gratis
+  // dari browser, dan keyboard ponsel menampilkan tombol "cari".
+  const search = document.createElement('input');
+  search.type = 'search';
+  search.className = 'tt-search';
+  search.placeholder = 'Cari nomor polisi…';
+  search.setAttribute('aria-label', 'Cari unit berdasarkan nomor polisi');
+
+  const count = document.createElement('span');
+  count.className = 'tt-count';
+  // Hasil pencarian harus diumumkan: tanpa ini pengguna pembaca layar mengetik
+  // ke dalam kolom yang tidak pernah memberi tahu apa pun berubah.
+  count.setAttribute('aria-live', 'polite');
+
   const windowLabel = document.createElement('span');
   windowLabel.className = 'tt-window';
   // Announce the new window on zoom — otherwise the only feedback is visual.
   windowLabel.setAttribute('aria-live', 'polite');
 
-  toolbar.append(zoomInBtn, zoomOutBtn, resetBtn, hint, windowLabel);
+  toolbar.append(zoomInBtn, zoomOutBtn, resetBtn, search, count, hint, windowLabel);
   container.appendChild(toolbar);
 
+  // Hanya baris unit yang tergulir. Toolbar di atas dan strip sumbu waktu di
+  // bawah tetap diam, jadi rentang waktu tidak pernah hilang dari layar saat
+  // menelusuri armada besar.
+  const scrollEl = document.createElement('div');
+  scrollEl.className = 'tt-scroll';
   const chartWrap = document.createElement('div');
   chartWrap.className = 'tt-chart-wrap';
   const canvas = document.createElement('canvas');
   chartWrap.appendChild(canvas);
-  container.appendChild(chartWrap);
+  scrollEl.appendChild(chartWrap);
+
+  const emptyEl = document.createElement('p');
+  emptyEl.className = 'fa-empty tt-empty';
+  emptyEl.hidden = true;
+  scrollEl.appendChild(emptyEl);
+  container.appendChild(scrollEl);
+
+  // ponytail: strip sumbu adalah DOM biasa, bukan Chart.js kedua. Instance kedua
+  // berarti dua chart yang harus disinkronkan tiap gerakan zoom DAN dipaksa
+  // punya lebar area plot yang sama — di sini keduanya gratis, karena strip ini
+  // digambar ulang dari `visible` di dalam applyWindow() yang memang sudah
+  // berjalan pada setiap zoom dan pan. Naikkan ke Chart.js kalau suatu saat
+  // sumbunya butuh gridline atau tick minor sendiri.
+  const axisEl = document.createElement('div');
+  axisEl.className = 'tt-axis';
+  axisEl.setAttribute('aria-hidden', 'true'); // ringkasan teks ada di aria-label kanvas
+  container.appendChild(axisEl);
 
   let chart: Chart | null = null;
   // Index-parallel to the chart's data points; the tooltip callbacks read it by
   // dataIndex. Reassigned as a whole with the chart so the two can never drift.
+  //
+  // Pencarian TIDAK menyentuh keduanya. Menyaring salah satu saja akan
+  // menggeser dataIndex dan membuat tooltip menampilkan unit yang salah — bug
+  // yang diam dan sulit dilihat. Yang disaring hanya daftar kategori sumbu y;
+  // Chart.js tidak menggambar titik yang kategorinya tidak terdaftar di sana,
+  // jadi invarian index-parallel bertahan tanpa perlu dijaga.
   let details: TripDetail[] = [];
+  /** Semua bar dari muatan terakhir. Dipakai untuk bounds dan daftar nama unit;
+   *  yang masuk chart adalah hasil saringannya (lihat applyRows). */
+  let bars: { x: [number, number]; y: string }[] = [];
+  /** Data mentah muatan terakhir, supaya pencarian tidak perlu fetch ulang. */
+  let snapshot: { trips: TripDTO[]; devices: DeviceLite[]; fuelByTrip: Record<string, number | null> } | null = null;
+  let query = '';
   // Fuel adds up to two more awaits, widening the window in which a second
   // filter change can overtake the first. Only the newest load may render.
   let loadToken = 0;
@@ -230,6 +335,98 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
     max: Date.parse(initialRange.toIso),
   };
   let visible: TimeWindow = bounds;
+
+  /**
+   * Menerapkan pencarian + urutan nomor polisi, lalu menyesuaikan tinggi kanvas
+   * supaya tiap unit dapat ROW_PX penuh dan namanya terbaca.
+   *
+   * Yang disaring adalah DATANYA, bukan daftar kategori sumbu y. Menyaring
+   * label saja tidak bekerja: CategoryScale.parse Chart.js memanggil
+   * findOrAddLabel, yang untuk nilai string yang tidak ditemukan justru
+   * melakukan `labels.push(raw)` — nama yang dibuang akan ditambahkan sendiri
+   * ke ujung daftar, dan pencarian terlihat seperti tidak berfungsi.
+   *
+   * `bars` dan `details` diturunkan dari array `shown` YANG SAMA, jadi
+   * keduanya index-parallel by construction — tooltip membacanya lewat
+   * dataIndex, dan menyaring salah satunya saja akan menampilkan unit yang
+   * salah tanpa error apa pun.
+   *
+   * Chart tidak dihancurkan, hanya datanya ditukar; itu yang membuat mengetik
+   * di kolom pencarian tetap ringan. Tanpa debounce — dua `trips.map` per
+   * ketikan tidak terasa sampai puluhan ribu perjalanan.
+   */
+  function applyRows() {
+    if (!snapshot || !chart) return;
+    const { trips, devices, fuelByTrip } = snapshot;
+    const nameById = new Map(devices.map((d) => [d.id, d.name]));
+    const nameOf = (id: string) => nameById.get(id) ?? id;
+
+    const names = visibleDeviceNames(bars, query);
+    const total = new Set(bars.map((b) => b.y)).size;
+
+    count.textContent = query
+      ? `${names.length} dari ${total} unit`
+      : total > 0
+        ? `${total} unit`
+        : '';
+
+    // Kosong karena pencarian dan kosong karena memang tidak ada perjalanan
+    // adalah dua hal berbeda, dan hanya satu di antaranya yang bisa ditindak
+    // oleh pengguna. Grafik kosong tanpa keterangan terbaca seperti grafik rusak.
+    const why =
+      total === 0
+        ? 'Tidak ada perjalanan pada rentang tanggal dan grup ini.'
+        : names.length === 0
+          ? `Tidak ada unit yang cocok dengan "${query}". Nama unit diambil dari MyGeotab — kalau nomor polisinya belum diisi di sana, di sini pun tidak akan ketemu.`
+          : '';
+
+    emptyEl.textContent = why;
+    emptyEl.hidden = why === '';
+    chartWrap.hidden = why !== '';
+    if (why) return;
+
+    // ponytail: kanvas setinggi jumlah unit x ROW_PX. Plafonnya batas tinggi
+    // kanvas browser (~32.000px, sekitar 1.100 unit); di atas itu perlu
+    // virtualisasi baris — dan armada sebesar itu butuh paging, bukan scroll.
+    chartWrap.style.height = `${Math.max(names.length * ROW_PX, ROW_PX * 3)}px`;
+
+    const shown = query ? trips.filter((t) => matchesPlate(nameOf(t.deviceId), query)) : trips;
+    details = buildTripDetails(shown, devices, fuelByTrip);
+
+    const y = chart.options.scales?.y as { labels?: string[] } | undefined;
+    if (y) y.labels = names;
+    chart.data.datasets[0].data = tripsToFloatingBars(shown, devices) as unknown as number[];
+
+    // resize() eksplisit: tinggi wrapper baru saja berubah dari JS, dan update()
+    // sendiri tidak mengukur ulang kanvas.
+    chart.resize();
+    chart.update('none');
+
+    // Ringkasan teks ikut menyempit bersama pencarian — kalau tidak, pembaca
+    // layar mendapat angka seluruh armada padahal yang tampil hanya satu unit.
+    canvas.setAttribute('aria-label', ariaSummary(details));
+  }
+
+  /** Menggambar ulang strip sumbu waktu yang dibekukan agar sejajar dengan area
+   *  plot kanvas — `chartArea.left` adalah ruang yang dipakai label nama unit. */
+  function renderAxis() {
+    const area = chart?.chartArea;
+    if (!area || !(area.right > area.left)) {
+      axisEl.innerHTML = '';
+      return;
+    }
+    const width = area.right - area.left;
+    axisEl.innerHTML = axisTicks(visible)
+      .map(({ ratio, at }) => {
+        // Label pertama dan terakhir digeser ke dalam, kalau tidak separuhnya
+        // terpotong di tepi strip.
+        const shift = ratio === 0 ? '0' : ratio === 1 ? '-100%' : '-50%';
+        return `<span class="tt-tick" style="left:${area.left + width * ratio}px;transform:translateX(${shift})">${
+          TICK_FMT.format(new Date(at))
+        }</span>`;
+      })
+      .join('');
+  }
 
   /** Pushes `visible` onto the axis and resyncs the toolbar. */
   function applyWindow() {
@@ -247,6 +444,7 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
     }
 
     windowLabel.textContent = `${WINDOW_FMT.format(new Date(visible.min))} – ${WINDOW_FMT.format(new Date(visible.max))}`;
+    renderAxis();
 
     // Disabled for real, not just greyed: a control that looks dead but still
     // fires is worse than no control.
@@ -324,6 +522,18 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
     applyWindow();
   }
 
+  // Tanpa debounce: applyRows() hanya menukar daftar kategori lalu update('none'),
+  // tidak membangun ulang chart, jadi cukup ringan untuk tiap ketikan.
+  //
+  // Jendela zoom SENGAJA tidak ikut berubah saat menyaring. Menghitung ulang
+  // `bounds` dari unit yang tersisa akan menggeser sumbu waktu tiap huruf yang
+  // diketik dan membuang zoom yang sudah diatur pengguna.
+  function onSearch() {
+    query = search.value;
+    applyRows();
+    renderAxis(); // lebar area plot bergeser saat nama unit terpanjang tersaring
+  }
+
   async function load(dateFrom: string, dateTo: string, groupId?: string) {
     const token = ++loadToken;
     try {
@@ -343,8 +553,9 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
 
       if (token !== loadToken) return; // a newer load already owns the chart
 
-      const bars = tripsToFloatingBars(trips, devices);
-      details = buildTripDetails(trips, devices, fuelPerTrip(trips, fuelRows));
+      snapshot = { trips, devices, fuelByTrip: fuelPerTrip(trips, fuelRows) };
+      bars = tripsToFloatingBars(trips, devices);
+      details = buildTripDetails(trips, devices, snapshot.fuelByTrip);
 
       // New data, new extent — and the view resets to unzoomed, because a
       // leftover window from the previous filter would show an empty axis.
@@ -358,7 +569,10 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
           datasets: [
             {
               label: 'Perjalanan',
-              data: bars as unknown as number[],
+              // Diisi applyRows() sesaat setelah ini, bersama labels sumbu y —
+              // supaya data dan daftar kategori tidak pernah sempat berbeda
+              // isinya, walau sekejap.
+              data: [],
               backgroundColor: '#3b82f6',
             },
           ],
@@ -379,10 +593,25 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
               beginAtZero: false,
               min: visible.min,
               max: visible.max,
-              ticks: {
-                callback: (value) =>
-                  new Date(Number(value)).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-              },
+              // Label tick bawaan dimatikan: sumbu waktunya kini digambar di
+              // strip DOM yang dibekukan di bawah area scroll (renderAxis).
+              // Gridline-nya dipertahankan — itu yang menyambungkan bar ke
+              // label di strip.
+              ticks: { display: false },
+            },
+            y: {
+              type: 'category',
+              // Urutan baris = urutan daftar ini. applyRows() mengisinya dengan
+              // nama unit terurut nomor polisi; tanpa labels eksplisit Chart.js
+              // memakai urutan kemunculan pertama di data, yang acak.
+              //
+              // Daftar ini WAJIB memuat setiap nilai y yang ada di data. Nilai
+              // yang tidak ditemukan tidak dilewati — findOrAddLabel akan
+              // mendorongnya ke ujung daftar, merusak urutan. Karena itu
+              // penyaringan dilakukan di data, bukan di sini.
+              labels: [],
+              ticks: { autoSkip: false }, // tiap unit punya barisnya sendiri
+              grid: { display: false },
             },
           },
           plugins: {
@@ -403,6 +632,7 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
         },
       });
 
+      applyRows(); // tinggi kanvas + urutan baris, sebelum jendela waktu dipasang
       applyWindow();
 
       canvas.setAttribute('role', 'img');
@@ -422,7 +652,9 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
   // whose container is display:none collapses it to 0x0 and it never comes back
   // — the exact bug that bit the heat map. clientWidth > 0 means "actually us".
   function onViewShown() {
-    if (container.clientWidth > 0) chart?.resize();
+    if (container.clientWidth <= 0) return;
+    chart?.resize();
+    renderAxis(); // resize menggeser chartArea, strip sumbu harus ikut
   }
 
   load(initial.dateFrom, initial.dateTo);
@@ -437,6 +669,7 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
   zoomInBtn.addEventListener('click', onZoomIn);
   zoomOutBtn.addEventListener('click', onZoomOut);
   resetBtn.addEventListener('click', onReset);
+  search.addEventListener('input', onSearch);
   ctx.rootEl.addEventListener('dashboard:filter-change', onFilterChange);
   ctx.rootEl.addEventListener('dashboard:view-shown', onViewShown);
 
@@ -452,6 +685,7 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
     zoomInBtn.removeEventListener('click', onZoomIn);
     zoomOutBtn.removeEventListener('click', onZoomOut);
     resetBtn.removeEventListener('click', onReset);
+    search.removeEventListener('input', onSearch);
     ctx.rootEl.removeEventListener('dashboard:filter-change', onFilterChange);
     ctx.rootEl.removeEventListener('dashboard:view-shown', onViewShown);
     container.classList.remove('tt-root');

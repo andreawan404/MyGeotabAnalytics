@@ -12,12 +12,25 @@
   gap: 0.5rem;
 }
 
-/* The canvas is forced to 100% of its parent, so it needs a parent that means
-   "whatever is left below the toolbar" rather than the whole box. */
-.tt-chart-wrap {
-  position: relative;
+/* Hanya baris unit yang tergulir. Toolbar di atas dan strip sumbu waktu di bawah
+   tetap diam, jadi rentang waktu tidak pernah hilang saat menelusuri armada
+   besar — sebelumnya semua unit dipaksa masuk ke satu kotak 320px sampai
+   namanya saling bertumpuk dan tidak terbaca sama sekali. */
+.tt-scroll {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain; /* mentok di bawah tidak menyeret halaman induk */
+}
+
+/* Tingginya diatur dari JS: jumlah unit x tinggi baris. Bukan flex:1 lagi —
+   justru tinggi eksplisit inilah yang membuat kanvas melampaui area scroll. */
+.tt-chart-wrap {
+  position: relative;
+}
+
+.tt-empty {
+  margin: 0.5rem 0;
 }
 
 .tt-toolbar {
@@ -80,4 +93,48 @@
 
 .tt-chart-wrap canvas.tt-grabbing {
   cursor: grabbing;
+}
+
+/* Pencarian nomor polisi. */
+.tt-search {
+  font: inherit;
+  font-size: 0.8125rem;
+  min-height: 44px; /* target sentuh yang sama dengan tombol zoom */
+  padding: 0 0.6rem;
+  border: 1px solid var(--fa-border);
+  border-radius: 6px;
+  background: var(--fa-surface);
+  color: var(--fa-text);
+  width: 11rem;
+}
+
+.tt-search:focus-visible {
+  outline: 2px solid var(--fa-accent);
+  outline-offset: 2px;
+}
+
+.tt-count {
+  font-size: 0.75rem;
+  color: var(--fa-muted);
+  white-space: nowrap;
+}
+
+/* Strip sumbu waktu yang dibekukan. DOM biasa, bukan Chart.js kedua — digambar
+   ulang dari `visible` di applyWindow(), yang memang sudah berjalan pada setiap
+   zoom dan pan, jadi tidak ada dua instance yang bisa keluar sinkron. */
+.tt-axis {
+  position: relative;
+  height: 1.25rem;
+  flex: none;
+  border-top: 1px solid var(--fa-border);
+  padding-top: 0.35rem;
+}
+
+.tt-tick {
+  position: absolute;
+  top: 0.35rem;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--fa-muted);
+  white-space: nowrap;
 }
