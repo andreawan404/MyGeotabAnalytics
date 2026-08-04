@@ -20,6 +20,7 @@ import {
   rawFuelTransactions,
   rawDrivers,
   rawDvirLogs,
+  rawMediaFiles,
 } from './fixtures';
 
 const FIXTURES_BY_TYPE_NAME: Record<string, any[]> = {
@@ -37,6 +38,7 @@ const FIXTURES_BY_TYPE_NAME: Record<string, any[]> = {
   FuelTransaction: rawFuelTransactions,
   User: rawDrivers,
   DVIRLog: rawDvirLogs,
+  MediaFile: rawMediaFiles,
 };
 
 // ponytail: params.search is ignored — dev mode returns the full fixture set for

@@ -308,3 +308,16 @@
   overscroll-behavior: contain;
   padding-right: 0.25rem;
 }
+
+/* Diagnostik rekaman (sementara — Tahap 1). Daftar sebaran nilai mentah. */
+.fa-sec-probe-list {
+  margin: 0.2rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.fa-sec-probe-list code {
+  font-size: 0.78rem;
+  padding: 0 0.25rem;
+  border-radius: 3px;
+  background: var(--fa-bg);
+}
