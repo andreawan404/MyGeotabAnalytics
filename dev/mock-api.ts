@@ -85,11 +85,11 @@ const LATENCY_MS = 50;
 // keyakinan yang membuat bug filter grup lolos berbulan-bulan.
 declare global {
   interface Window {
-    __FA_MEDIA_MODE__?: 'denied' | 'empty';
+    __FA_MEDIA_MODE__?: 'denied' | 'empty' | 'outofrange';
   }
 }
 
-function mediaMode(): 'denied' | 'empty' | undefined {
+function mediaMode(): 'denied' | 'empty' | 'outofrange' | undefined {
   return typeof window === 'undefined' ? undefined : window.__FA_MEDIA_MODE__;
 }
 
@@ -100,6 +100,13 @@ export function createMockApi(): GeotabApi {
       if ((params as any)?.typeName === 'MediaFile' && mode) {
         if (mode === 'denied') {
           setTimeout(() => errCb?.({ name: 'InvalidUserException', message: 'no rights to MediaFile' }), LATENCY_MS);
+          return;
+        }
+        if (mode === 'outofrange') {
+          // Ada isinya HANYA saat ditanya tanpa search (probe akses); permintaan
+          // yang membawa rentang tanggal mengembalikan kosong.
+          const hasSearch = !!(params as any)?.search;
+          setTimeout(() => cb(hasSearch ? [] : rawMediaFiles.slice(0, 3)), LATENCY_MS);
           return;
         }
         setTimeout(() => cb([]), LATENCY_MS); // 'empty'

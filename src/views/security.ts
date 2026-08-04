@@ -353,7 +353,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
         </div>
       </section>
 
-      ${renderMediaProbe(media, incidents, mediaAccess)}
+      ${renderMediaProbe(media, incidents, mediaAccess, nameOf)}
 
       ${filter.zoneId ? renderBreaches(selectedZone, breaches, nameOf) : ''}
 
@@ -482,7 +482,12 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
    * Panel ini BUKAN kode buang: begitu Tahap 2 dibangun, isinya menjadi
    * empty-state "kenapa unit ini tidak punya rekaman".
    */
-  function renderMediaProbe(media: MediaFileDTO[], incidents: Incident[], access: MediaAccessProbe): string {
+  function renderMediaProbe(
+    media: MediaFileDTO[],
+    incidents: Incident[],
+    access: MediaAccessProbe,
+    nameOf: (id: string) => string
+  ): string {
     const p = summarizeMediaProbe(
       media,
       incidents.map((i) => ({ deviceId: i.deviceId, at: i.at }))
@@ -522,10 +527,41 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
           (yang tersedia hanya DownloadMediaFile dan UploadMediaFile).
           Selama itu, ${int(p.incidentsTotal)} insiden pada rentang ini tidak bisa divalidasi dari add-in.</p>`;
       }
+      // Hitungan saja menyesatkan. Kalau MyGeotab menampilkan puluhan Video
+      // Events pada rentang yang sama sementara di sini cuma segelintir, yang
+      // menjelaskannya bukan angkanya melainkan ISI barisnya: tanggal, tipe dan
+      // solutionId sekaligus memberi tahu apakah MediaFile memang tempat klip
+      // kamera disimpan, atau sesuatu yang lain sama sekali.
       return `<p class="fa-empty">Permintaan MediaFile <strong>BERHASIL</strong> dan database ini punya
-        <strong>${access.capped ? 'setidaknya ' : ''}${int(access.anyCount)}</strong> MediaFile —
-        tapi tidak satu pun jatuh pada rentang tanggal dan grup yang sedang dipilih.
-        Coba perlebar rentang tanggalnya atau pilih Semua grup: rekamannya ada, hanya bukan di sini.</p>`;
+          <strong>${access.capped ? 'setidaknya ' : ''}${int(access.anyCount)}</strong> MediaFile —
+          tapi tidak satu pun jatuh pada rentang tanggal dan grup yang sedang dipilih.</p>
+        ${sampleTable(access.sample)}
+        <p class="fa-note">Kalau halaman Video Events MyGeotab menampilkan jauh lebih banyak klip daripada
+          angka di atas, berarti klip kamera <strong>tidak</strong> disimpan sebagai MediaFile — entity ini
+          dipakai jalur lain, dan rekamannya tidak terjangkau API publik. Tabel di atas adalah isi
+          sebenarnya dari yang berhasil dibaca.</p>`;
+    };
+
+    /** Isi baris apa adanya. Tanpa ini, "3 MediaFile" tidak memberi tahu apa pun. */
+    const sampleTable = (rows: MediaFileDTO[]): string => {
+      if (rows.length === 0) return '';
+      return `<div class="fa-scroll-table fa-sec-breachwrap">
+        <table class="fa-table">
+          <thead><tr><th>Dari</th><th>Sampai</th><th>Unit</th><th>Tipe</th><th>Status</th><th>Sumber</th></tr></thead>
+          <tbody>${rows
+            .map(
+              (r) => `<tr>
+                <td>${esc(r.fromDate ? formatTime(r.fromDate) : '—')}</td>
+                <td>${esc(r.toDate ? formatTime(r.toDate) : '—')}</td>
+                <td>${esc(r.deviceId ? nameOf(r.deviceId) : '(tanpa unit)')}</td>
+                <td><code>${esc(r.mediaType || '(kosong)')}</code></td>
+                <td><code>${esc(r.status || '(kosong)')}</code></td>
+                <td><code>${esc(r.solutionId || '(tanpa solutionId)')}</code></td>
+              </tr>`
+            )
+            .join('')}</tbody>
+        </table>
+      </div>`;
     };
 
     const body =

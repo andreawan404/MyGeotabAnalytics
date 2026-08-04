@@ -69,6 +69,9 @@ function toDTO(raw: any): MediaFileDTO {
 /** Berapa baris yang diminta saat menanyakan "ada MediaFile sama sekali?".
  *  Kecil karena yang dicari cuma ada/tidak ada, bukan datanya. */
 const PROBE_LIMIT = 50;
+/** Berapa baris yang ditampilkan apa adanya. Cukup untuk mengenali polanya,
+ *  tidak cukup untuk membanjiri panel. */
+const SAMPLE_LIMIT = 10;
 
 export interface MediaAccessProbe {
   /** `denied` = API menolak (hak akses/lisensi). `ok` = panggilan berhasil,
@@ -79,6 +82,16 @@ export interface MediaAccessProbe {
   anyCount: number;
   /** anyCount menyentuh plafon: bacalah sebagai "setidaknya sekian". */
   capped: boolean;
+  /**
+   * Beberapa baris pertama apa adanya.
+   *
+   * Ada karena hitungan saja menyesatkan: database ini melaporkan 3 MediaFile
+   * sementara halaman Video Events MyGeotab menampilkan 41 klip pada rentang
+   * yang sama. Angka yang tidak cocok hanya bisa dijelaskan dengan melihat
+   * ISI barisnya — tanggal, tipe, dan solutionId-nya sekaligus memberi tahu
+   * apakah MediaFile memang tempat klip kamera disimpan, atau sesuatu yang lain.
+   */
+  sample: MediaFileDTO[];
   errorName: string | null;
   errorMessage: string | null;
 }
@@ -96,10 +109,12 @@ export async function probeMediaAccess(params: { database: string }): Promise<Me
     // Tanpa `search` sama sekali: pertanyaannya "apakah entity ini terisi di
     // database ini", bukan "apa yang terjadi pada rentang yang sedang dilihat".
     const raw = await callApi<any[]>('Get', { typeName: 'MediaFile', resultsLimit: PROBE_LIMIT });
+    const rows = Array.isArray(raw) ? raw : [];
     result = {
       status: 'ok',
-      anyCount: Array.isArray(raw) ? raw.length : 0,
-      capped: Array.isArray(raw) && raw.length >= PROBE_LIMIT,
+      anyCount: rows.length,
+      capped: rows.length >= PROBE_LIMIT,
+      sample: rows.slice(0, SAMPLE_LIMIT).map(toDTO),
       errorName: null,
       errorMessage: null,
     };
@@ -109,6 +124,7 @@ export async function probeMediaAccess(params: { database: string }): Promise<Me
       status: DENIED_RE.test(name) || DENIED_RE.test(String(err?.message ?? '')) ? 'denied' : 'error',
       anyCount: 0,
       capped: false,
+      sample: [],
       errorName: name,
       errorMessage: String(err?.message ?? err ?? '(tanpa pesan)'),
     };
