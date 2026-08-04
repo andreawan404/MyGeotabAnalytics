@@ -24,7 +24,7 @@ import { fetchDrivers } from '../api/fetchers/driver';
 import { fetchDevices } from '../api/fetchers/device';
 import { fetchTrips } from '../api/fetchers/trip';
 import { fetchRules } from '../api/fetchers/rule';
-import { fetchMediaFiles, type MediaFileDTO } from '../api/fetchers/media-file';
+import { fetchMediaFiles, probeMediaAccess, type MediaFileDTO, type MediaAccessProbe } from '../api/fetchers/media-file';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
 import { esc, clamp, int } from '../utils/format';
@@ -77,6 +77,10 @@ interface Loaded {
   /** Klip kamera pada rentang ini. Kosong bila database tidak punya video
    *  atau tidak memberi hak akses — keduanya keadaan normal. */
   media: MediaFileDTO[];
+  /** Apakah panggilan MediaFile berhasil sama sekali, dan apakah database ini
+   *  punya klip di luar rentang yang sedang dilihat. Memisahkan "ditolak" dari
+   *  "kosong" — tanpa ini keduanya terlihat identik. */
+  mediaAccess: MediaAccessProbe;
   filter: FilterChangeDetail;
 }
 
@@ -168,7 +172,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
     try {
       const { fromIso, toIso } = toUtcRange(filter.dateFrom, filter.dateTo);
       const groupId = filter.groupId;
-      const [events, zones, statuses, drivers, devices, trips, rules, media] = await Promise.all([
+      const [events, zones, statuses, drivers, devices, trips, rules, media, mediaAccess] = await Promise.all([
         fetchExceptionEvents({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
         fetchZones({ database: ctx.database }),
         fetchDeviceStatus({ database: ctx.database }),
@@ -177,9 +181,10 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
         fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
         fetchRules({ database: ctx.database }),
         fetchMediaFiles({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
+        probeMediaAccess({ database: ctx.database }),
       ]);
       if (seq !== loadSeq) return;
-      latest = { events, zones, statuses, drivers, devices, trips, rules, media, filter };
+      latest = { events, zones, statuses, drivers, devices, trips, rules, media, mediaAccess, filter };
       render();
     } catch (err) {
       console.error('security: load failed', err);
@@ -191,7 +196,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
   function render(): void {
     if (!latest) return;
     destroyMap(); // innerHTML di bawah membuang node peta; lepaskan dulu instance-nya
-    const { events, zones, statuses, drivers, devices, trips, rules, media, filter } = latest;
+    const { events, zones, statuses, drivers, devices, trips, rules, media, mediaAccess, filter } = latest;
 
     const deviceName = new Map(devices.map((d) => [d.id, d.name]));
     for (const s of statuses) if (!deviceName.has(s.deviceId)) deviceName.set(s.deviceId, s.deviceName);
@@ -348,7 +353,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
         </div>
       </section>
 
-      ${renderMediaProbe(media, incidents)}
+      ${renderMediaProbe(media, incidents, mediaAccess)}
 
       ${filter.zoneId ? renderBreaches(selectedZone, breaches, nameOf) : ''}
 
@@ -477,7 +482,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
    * Panel ini BUKAN kode buang: begitu Tahap 2 dibangun, isinya menjadi
    * empty-state "kenapa unit ini tidak punya rekaman".
    */
-  function renderMediaProbe(media: MediaFileDTO[], incidents: Incident[]): string {
+  function renderMediaProbe(media: MediaFileDTO[], incidents: Incident[], access: MediaAccessProbe): string {
     const p = summarizeMediaProbe(
       media,
       incidents.map((i) => ({ deviceId: i.deviceId, at: i.at }))
@@ -493,14 +498,41 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
       return `<dt>${esc(label)}</dt><dd><ul class="fa-sec-probe-list">${body}</ul></dd>`;
     };
 
+    // Nol saja tidak bisa ditindak. Probe akses menjawab pertanyaan yang
+    // sebenarnya: apakah API menolak kita, atau memang tidak ada klipnya.
+    const verdict = (): string => {
+      if (access.status === 'denied') {
+        return `<p class="fa-error">Permintaan MediaFile <strong>DITOLAK</strong> oleh MyGeotab
+          (<code>${esc(access.errorName ?? '')}</code>${access.errorMessage ? `: ${esc(access.errorMessage)}` : ''}).
+          Jadi bukan soal ada atau tidaknya rekaman — akun yang dipakai add-in ini belum diberi hak akses media,
+          atau database ini belum punya lisensi video. Mintakan hak baca MediaFile untuk akun tersebut,
+          lalu buka lagi halaman ini.</p>`;
+      }
+      if (access.status === 'error') {
+        return `<p class="fa-error">Permintaan MediaFile gagal dengan error yang tidak dikenali
+          (<code>${esc(access.errorName ?? '')}</code>${access.errorMessage ? `: ${esc(access.errorMessage)}` : ''}).
+          Ini bukan jawaban "tidak ada rekaman" — panggilannya sendiri yang tidak berhasil.</p>`;
+      }
+      if (access.anyCount === 0) {
+        return `<p class="fa-empty">Permintaan MediaFile <strong>BERHASIL</strong>, tapi database ini
+          tidak punya satu pun MediaFile — bukan hanya di rentang ini, melainkan tanpa filter tanggal
+          maupun grup sama sekali. Artinya GO Focus tidak menerbitkan klipnya ke MediaFile.
+          Rekaman GO Focus hanya masuk MyGeotab ketika seseorang menekan <strong>Request</strong>
+          di halaman Video, dan API publik tidak punya metode untuk memicunya
+          (yang tersedia hanya DownloadMediaFile dan UploadMediaFile).
+          Selama itu, ${int(p.incidentsTotal)} insiden pada rentang ini tidak bisa divalidasi dari add-in.</p>`;
+      }
+      return `<p class="fa-empty">Permintaan MediaFile <strong>BERHASIL</strong> dan database ini punya
+        <strong>${access.capped ? 'setidaknya ' : ''}${int(access.anyCount)}</strong> MediaFile —
+        tapi tidak satu pun jatuh pada rentang tanggal dan grup yang sedang dipilih.
+        Coba perlebar rentang tanggalnya atau pilih Semua grup: rekamannya ada, hanya bukan di sini.</p>`;
+    };
+
     const body =
       p.total === 0
-        ? `<p class="fa-empty">Tidak ada satu pun MediaFile pada rentang dan grup ini.
-             Artinya salah satu dari tiga: database ini tidak punya lisensi video, akun add-in tidak
-             diberi hak akses media, atau GO Focus tidak menerbitkan klipnya ke MediaFile sama sekali.
-             ${int(p.incidentsTotal)} insiden pada rentang ini tidak bisa divalidasi lewat rekaman.</p>`
+        ? verdict()
         : `<dl class="fa-kpi-detail-list">
-             <dt>Jumlah klip</dt><dd>${int(p.total)} dari ${int(p.deviceCount)} unit berbeda</dd>
+             <dt>Jumlah klip</dt><dd>${int(p.total)} dari ${int(p.deviceCount)} unit berbeda pada rentang ini               ${access.status === 'ok' ? ` &mdash; ${access.capped ? 'setidaknya ' : ''}${int(access.anyCount)} di seluruh database` : ''}</dd>
              ${dist('Tipe media', p.byMediaType)}
              ${dist('Status', p.byStatus)}
              ${dist('Sumber (solutionId)', p.bySolutionId)}

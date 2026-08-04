@@ -76,9 +76,35 @@ function resolve(method: string, params: any): any[] {
 
 const LATENCY_MS = 50;
 
+// Simulasi keadaan MediaFile, disetel dari konsol atau skrip uji:
+//   window.__FA_MEDIA_MODE__ = 'denied' | 'empty'
+//
+// Ada karena panel diagnostik rekaman punya TIGA vonis berbeda (ditolak /
+// database kosong / rentangnya saja yang kosong), dan tanpa cara memicunya di
+// dev, dua di antaranya hanya bisa "diyakini benar dari kode" — persis jenis
+// keyakinan yang membuat bug filter grup lolos berbulan-bulan.
+declare global {
+  interface Window {
+    __FA_MEDIA_MODE__?: 'denied' | 'empty';
+  }
+}
+
+function mediaMode(): 'denied' | 'empty' | undefined {
+  return typeof window === 'undefined' ? undefined : window.__FA_MEDIA_MODE__;
+}
+
 export function createMockApi(): GeotabApi {
   return {
-    call(method, params, cb) {
+    call(method, params, cb, errCb) {
+      const mode = mediaMode();
+      if ((params as any)?.typeName === 'MediaFile' && mode) {
+        if (mode === 'denied') {
+          setTimeout(() => errCb?.({ name: 'InvalidUserException', message: 'no rights to MediaFile' }), LATENCY_MS);
+          return;
+        }
+        setTimeout(() => cb([]), LATENCY_MS); // 'empty'
+        return;
+      }
       setTimeout(() => cb(resolve(method, params)), LATENCY_MS);
     },
     multiCall(calls, cb) {
