@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { resolveVideoPage, videoPageParams, VIDEO_PAGE_CANDIDATES } from './video-link';
+import { resolveVideoPage, videoPageParams, VIDEO_PAGE_CANDIDATES, CONFIRMED_VIDEO_PAGE } from './video-link';
 
 // --- resolveVideoPage -------------------------------------------------------
 //
@@ -7,9 +7,29 @@ import { resolveVideoPage, videoPageParams, VIDEO_PAGE_CANDIDATES } from './vide
 // tebakan kita, melainkan jawaban host — dan kalau host tidak mengenali satu
 // pun, tombolnya harus HILANG, bukan muncul lalu gagal saat ditekan.
 assert.equal(resolveVideoPage(() => true), VIDEO_PAGE_CANDIDATES[0], 'ambil kandidat pertama yang diterima');
-assert.equal(resolveVideoPage(() => false), null, 'tidak satu pun dikenali -> null');
-assert.equal(resolveVideoPage(undefined), null, 'tanpa host (dev/check) -> null');
-assert.equal(resolveVideoPage(null as any), null);
+
+// Kandidat pertama HARUS yang terkonfirmasi: urutan itu load-bearing, bukan
+// selera. Halaman Video adalah add-in Marketplace (awalan "addin-"), dan
+// kelima tebakan awal yang bernama seperti halaman bawaan tidak pernah cocok.
+assert.equal(VIDEO_PAGE_CANDIDATES[0], CONFIRMED_VIDEO_PAGE);
+assert.match(CONFIRMED_VIDEO_PAGE, /^addin-/);
+
+// Host menolak semuanya. Untuk halaman bawaan itu jawaban akhir; untuk halaman
+// ADD-IN belum tentu — hasAccessToPage mendokumentasikan halaman MyGeotab, dan
+// add-in Marketplace bisa saja tidak terdaftar di sana. Hanya halaman yang
+// keberadaannya DIPASTIKAN yang boleh lolos.
+assert.equal(resolveVideoPage(() => false), CONFIRMED_VIDEO_PAGE, 'penolakan menyeluruh -> halaman terkonfirmasi');
+
+// Tebakan TIDAK mendapat keistimewaan itu: tanpa halaman terkonfirmasi di
+// daftar, penolakan menyeluruh tetap berarti tombolnya hilang.
+assert.equal(resolveVideoPage(() => false, ['videoEvents', 'video']), null, 'tebakan saja -> tetap null');
+
+// Tanpa hasAccessToPage sama sekali (host lama / harness dev), pakai yang
+// terkonfirmasi — menyembunyikan tombol di situ berarti menghukum pengguna
+// karena host-nya pelit informasi.
+assert.equal(resolveVideoPage(undefined), CONFIRMED_VIDEO_PAGE);
+assert.equal(resolveVideoPage(null as any), CONFIRMED_VIDEO_PAGE);
+assert.equal(resolveVideoPage(undefined, []), null, 'daftar kosong tetap null');
 
 // Kandidat kedua dipakai kalau yang pertama ditolak.
 assert.equal(
@@ -19,7 +39,7 @@ assert.equal(
 
 // Host boleh MELEMPAR untuk nama yang tidak dikenalnya. Itu jawaban "tidak
 // ada" — bukan alasan menjatuhkan sisa daftarnya.
-let asked: string[] = [];
+const asked: string[] = [];
 const throwyHost = (p: string) => {
   asked.push(p);
   if (p !== 'cameraEvents') throw new Error('unknown page');

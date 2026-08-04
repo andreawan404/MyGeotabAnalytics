@@ -9,7 +9,7 @@ import { createMockApi, mockState } from './mock-api';
 const wanted = (window as any).__FA_VIDEO_PAGE__ as string | undefined;
 const state = {
   ...mockState,
-  hasAccessToPage: (page: string) => wanted !== 'none' && page === (wanted ?? 'videoEvents'),
+  hasAccessToPage: (page: string) => wanted !== 'none' && page === (wanted ?? 'addin-geotabvideo-events'),
   gotoPage: (page: string, params?: object) => {
     (window as any).__FA_LAST_GOTO__ = { page, params };
     console.log('[dev] gotoPage', page, params);

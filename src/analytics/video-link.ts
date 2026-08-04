@@ -25,7 +25,21 @@
  * Tambahkan nama yang terlihat di address bar MyGeotab pelanggan ke urutan
  * PALING ATAS bila suatu saat diketahui.
  */
+/**
+ * Halaman yang keberadaannya DIPASTIKAN dari address bar pelanggan, bukan
+ * ditebak. Statusnya berbeda dari kandidat lain, dan perbedaan itu penting di
+ * resolveVideoPage.
+ */
+export const CONFIRMED_VIDEO_PAGE = 'addin-geotabvideo-events';
+
 export const VIDEO_PAGE_CANDIDATES = [
+  // TERKONFIRMASI dari address bar pelanggan:
+  //   https://my.geotab.com/<db>/#addin-geotabvideo-events,visibleCategoryId:30
+  // Awalan "addin-" itu yang penting: halaman Video adalah ADD-IN Marketplace,
+  // bukan halaman bawaan MyGeotab. Kelima tebakan awal saya semuanya bernama
+  // seperti halaman bawaan, jadi tidak satu pun bisa cocok.
+  CONFIRMED_VIDEO_PAGE,
+  // Sisanya tebakan, disimpan kalau database lain memakai nama berbeda.
   'videoEvents',
   'video',
   'videoEventList',
@@ -38,7 +52,12 @@ export function resolveVideoPage(
   hasAccess: ((page: string) => boolean) | undefined,
   candidates: string[] = VIDEO_PAGE_CANDIDATES
 ): string | null {
-  if (typeof hasAccess !== 'function') return null;
+  // Host tidak menyediakan hasAccessToPage: pakai kandidat pertama, yang
+  // TERKONFIRMASI ada di database pelanggan. Mengembalikan null di sini akan
+  // menyembunyikan tombol pada host yang sebenarnya sanggup membuka halamannya
+  // — menghukum pengguna karena host-nya pelit informasi, bukan karena
+  // halamannya tidak ada.
+  if (typeof hasAccess !== 'function') return candidates[0] ?? null;
   for (const page of candidates) {
     try {
       if (hasAccess(page)) return page;
@@ -47,7 +66,18 @@ export function resolveVideoPage(
       // "tidak ada", bukan alasan menjatuhkan seluruh daftar.
     }
   }
-  return null;
+
+  // Host menolak SEMUANYA. Untuk halaman bawaan, itu jawaban akhir. Untuk
+  // halaman ADD-IN tidak: hasAccessToPage mendokumentasikan halaman MyGeotab,
+  // dan add-in Marketplace belum tentu terdaftar di sana — penolakannya bisa
+  // berarti "tidak saya kenali", bukan "tidak ada".
+  //
+  // Karena itu hanya halaman yang keberadaannya DIPASTIKAN dari address bar
+  // pelanggan yang boleh lolos di sini. Tebakan tidak. Bedanya nyata: tombol
+  // menuju halaman yang terbukti ada paling buruk membuka halaman yang tidak
+  // dilisensikan (MyGeotab menampilkan pesannya sendiri), sementara tombol
+  // menuju nama karangan pasti gagal.
+  return candidates.includes(CONFIRMED_VIDEO_PAGE) ? CONFIRMED_VIDEO_PAGE : null;
 }
 
 export interface VideoLinkInput {
