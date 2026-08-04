@@ -321,3 +321,21 @@
   border-radius: 3px;
   background: var(--fa-bg);
 }
+
+/* Lokasi dan Rekaman berdampingan di satu sel; membungkus di iframe sempit. */
+.fa-sec-actions-cell {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+/* Rekaman meninggalkan add-in menuju halaman Video MyGeotab, jadi ia TIDAK
+   memakai isian penuh seperti Lokasi — tidak ada keadaan "sedang ditampilkan"
+   yang bisa dipertahankan setelah pengguna berpindah halaman. */
+.fa-sec-vid {
+  color: var(--fa-muted);
+}
+
+.fa-sec-vid:hover {
+  color: var(--fa-accent);
+}

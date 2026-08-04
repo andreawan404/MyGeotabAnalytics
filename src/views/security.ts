@@ -24,13 +24,12 @@ import { fetchDrivers } from '../api/fetchers/driver';
 import { fetchDevices } from '../api/fetchers/device';
 import { fetchTrips } from '../api/fetchers/trip';
 import { fetchRules } from '../api/fetchers/rule';
-import { fetchMediaFiles, probeMediaAccess, type MediaFileDTO, type MediaAccessProbe } from '../api/fetchers/media-file';
 import { getCurrentFilter } from '../components/filter-bar';
 import { onFilterChangeVisible } from './reload-when-visible';
 import { esc, clamp, int } from '../utils/format';
 import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
 import { summarizeSecurity } from '../analytics/summary';
-import { summarizeMediaProbe, MATCH_WINDOW_SEC } from '../analytics/media-probe';
+import { resolveVideoPage, videoPageParams } from '../analytics/video-link';
 import { toUtcRange } from '../utils/date-range';
 import { DEFAULT_WORKING_HOURS } from '../components/kpi-card';
 import {
@@ -74,13 +73,6 @@ interface Loaded {
   devices: DeviceLite[];
   trips: TripDTO[];
   rules: RuleDTO[];
-  /** Klip kamera pada rentang ini. Kosong bila database tidak punya video
-   *  atau tidak memberi hak akses — keduanya keadaan normal. */
-  media: MediaFileDTO[];
-  /** Apakah panggilan MediaFile berhasil sama sekali, dan apakah database ini
-   *  punya klip di luar rentang yang sedang dilihat. Memisahkan "ditolak" dari
-   *  "kosong" — tanpa ini keduanya terlihat identik. */
-  mediaAccess: MediaAccessProbe;
   filter: FilterChangeDetail;
 }
 
@@ -141,6 +133,12 @@ const PIN_SVG =
   '<path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/>' +
   '</svg>';
 
+/** Ikon film. Sama seperti PIN_SVG: inline, currentColor, tanpa pustaka ikon. */
+const FILM_SVG =
+  '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">' +
+  '<path fill="currentColor" d="M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm2 2v2h2V6H6Zm10 0v2h2V6h-2ZM6 16v2h2v-2H6Zm10 0v2h2v-2h-2ZM9 6v12h6V6H9Z"/>' +
+  '</svg>';
+
 function osmHref(lat: number, lon: number): string {
   return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`;
 }
@@ -150,6 +148,10 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
 
   let hours = normalizeHours(readJson<SecurityHours>(HOURS_KEY + ctx.database, defaultHours()));
   let contacts = readJson<Record<string, string>>(CONTACT_KEY + ctx.database, {});
+  /** Nama halaman Video MyGeotab yang benar-benar bisa dibuka pengguna ini,
+   *  atau null. Ditentukan sekali di sini, bukan per baris insiden. */
+  const videoPage = resolveVideoPage(ctx.state?.hasAccessToPage);
+
   let latest: Loaded | null = null;
   // Filter changes can overlap (7-day fetch still in flight when the user picks
   // 30 days) — only the newest load may paint.
@@ -172,7 +174,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
     try {
       const { fromIso, toIso } = toUtcRange(filter.dateFrom, filter.dateTo);
       const groupId = filter.groupId;
-      const [events, zones, statuses, drivers, devices, trips, rules, media, mediaAccess] = await Promise.all([
+      const [events, zones, statuses, drivers, devices, trips, rules] = await Promise.all([
         fetchExceptionEvents({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
         fetchZones({ database: ctx.database }),
         fetchDeviceStatus({ database: ctx.database }),
@@ -180,11 +182,9 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
         fetchDevices({ database: ctx.database, groupId, fromDate: fromIso, toDate: toIso }),
         fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
         fetchRules({ database: ctx.database }),
-        fetchMediaFiles({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
-        probeMediaAccess({ database: ctx.database }),
       ]);
       if (seq !== loadSeq) return;
-      latest = { events, zones, statuses, drivers, devices, trips, rules, media, mediaAccess, filter };
+      latest = { events, zones, statuses, drivers, devices, trips, rules, filter };
       render();
     } catch (err) {
       console.error('security: load failed', err);
@@ -196,7 +196,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
   function render(): void {
     if (!latest) return;
     destroyMap(); // innerHTML di bawah membuang node peta; lepaskan dulu instance-nya
-    const { events, zones, statuses, drivers, devices, trips, rules, media, mediaAccess, filter } = latest;
+    const { events, zones, statuses, drivers, devices, trips, rules, filter } = latest;
 
     const deviceName = new Map(devices.map((d) => [d.id, d.name]));
     for (const s of statuses) if (!deviceName.has(s.deviceId)) deviceName.set(s.deviceId, s.deviceName);
@@ -353,8 +353,6 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
         </div>
       </section>
 
-      ${renderMediaProbe(media, incidents, mediaAccess, nameOf)}
-
       ${filter.zoneId ? renderBreaches(selectedZone, breaches, nameOf) : ''}
 
       <section class="fa-sec-panel">
@@ -437,12 +435,22 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
                ${PIN_SVG}<span>Lokasi</span>
              </button>`
           : '<span class="fa-sec-muted">Tidak ada posisi</span>';
+        // Tombolnya HANYA muncul kalau host mengonfirmasi halaman Video-nya ada.
+        // Menampilkannya tanpa itu berarti menjanjikan sesuatu yang gagal saat
+        // ditekan — lebih buruk daripada tidak menawarkannya sama sekali.
+        const video =
+          videoPage && videoPageParams({ deviceId: i.deviceId, at: i.at })
+            ? `<button type="button" class="fa-sec-loc fa-sec-vid"
+                       data-video-device="${esc(i.deviceId)}" data-video-at="${esc(i.at)}">
+                 ${FILM_SVG}<span>Rekaman</span>
+               </button>`
+            : '';
         return `<tr>
           <td>${esc(formatTime(i.at))}</td>
           <td>${esc(nameOf(i.deviceId))}</td>
           <td>${esc(CATEGORY_LABEL[i.category])}<div class="fa-sec-muted">${esc(i.label)}</div></td>
           <td><span class="fa-badge fa-badge-${i.severity}">${SEVERITY_LABEL[i.severity]}</span></td>
-          <td>${location}</td>
+          <td class="fa-sec-actions-cell">${location}${video}</td>
         </tr>`;
       })
       .join('');
@@ -460,134 +468,12 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
           <thead><tr><th>Waktu</th><th>Unit</th><th>Kategori</th><th>Keparahan</th><th>Posisi Terakhir</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
-      </div>${more}`;
-  }
-
-  /**
-   * Diagnostik rekaman kamera — TAHAP 1 dari fitur validasi insiden lewat video.
-   *
-   * Kenapa ini ada dan bukan langsung pemutar video: dokumentasi Geotab
-   * memastikan entity MediaFile dan pencariannya ada, tapi TIDAK memastikan
-   * GO Focus menerbitkan klipnya ke sana — halaman Video Events bawaan MyGeotab
-   * bisa saja memakai jalur internal. Proyek ini sudah dua kali membangun di
-   * atas properti API yang diterima server lalu diabaikan diam-diam
-   * (groupSearch, lalu deviceSearch.groups), dan keduanya baru ketahuan dari
-   * layar pelanggan. Panel ini menjawab pertanyaan itu lebih dulu, dengan
-   * biaya satu panggilan API.
-   *
-   * Nilainya dilaporkan APA ADANYA — enum tidak diterjemahkan, yang kosong
-   * ditandai kosong. Probe yang merapikan hasilnya tidak bisa memberi tahu apa
-   * yang sebenarnya ada di sana.
-   *
-   * Panel ini BUKAN kode buang: begitu Tahap 2 dibangun, isinya menjadi
-   * empty-state "kenapa unit ini tidak punya rekaman".
-   */
-  function renderMediaProbe(
-    media: MediaFileDTO[],
-    incidents: Incident[],
-    access: MediaAccessProbe,
-    nameOf: (id: string) => string
-  ): string {
-    const p = summarizeMediaProbe(
-      media,
-      incidents.map((i) => ({ deviceId: i.deviceId, at: i.at }))
-    );
-
-    const dist = (label: string, rec: Record<string, number>): string => {
-      const keys = Object.keys(rec);
-      if (keys.length === 0) return '';
-      const body = keys
-        .sort((a, b) => rec[b] - rec[a])
-        .map((k) => `<li><code>${esc(k)}</code> — ${int(rec[k])}</li>`)
-        .join('');
-      return `<dt>${esc(label)}</dt><dd><ul class="fa-sec-probe-list">${body}</ul></dd>`;
-    };
-
-    // Nol saja tidak bisa ditindak. Probe akses menjawab pertanyaan yang
-    // sebenarnya: apakah API menolak kita, atau memang tidak ada klipnya.
-    const verdict = (): string => {
-      if (access.status === 'denied') {
-        return `<p class="fa-error">Permintaan MediaFile <strong>DITOLAK</strong> oleh MyGeotab
-          (<code>${esc(access.errorName ?? '')}</code>${access.errorMessage ? `: ${esc(access.errorMessage)}` : ''}).
-          Jadi bukan soal ada atau tidaknya rekaman — akun yang dipakai add-in ini belum diberi hak akses media,
-          atau database ini belum punya lisensi video. Mintakan hak baca MediaFile untuk akun tersebut,
-          lalu buka lagi halaman ini.</p>`;
-      }
-      if (access.status === 'error') {
-        return `<p class="fa-error">Permintaan MediaFile gagal dengan error yang tidak dikenali
-          (<code>${esc(access.errorName ?? '')}</code>${access.errorMessage ? `: ${esc(access.errorMessage)}` : ''}).
-          Ini bukan jawaban "tidak ada rekaman" — panggilannya sendiri yang tidak berhasil.</p>`;
-      }
-      if (access.anyCount === 0) {
-        return `<p class="fa-empty">Permintaan MediaFile <strong>BERHASIL</strong>, tapi database ini
-          tidak punya satu pun MediaFile — bukan hanya di rentang ini, melainkan tanpa filter tanggal
-          maupun grup sama sekali. Artinya GO Focus tidak menerbitkan klipnya ke MediaFile.
-          Rekaman GO Focus hanya masuk MyGeotab ketika seseorang menekan <strong>Request</strong>
-          di halaman Video, dan API publik tidak punya metode untuk memicunya
-          (yang tersedia hanya DownloadMediaFile dan UploadMediaFile).
-          Selama itu, ${int(p.incidentsTotal)} insiden pada rentang ini tidak bisa divalidasi dari add-in.</p>`;
-      }
-      // Hitungan saja menyesatkan. Kalau MyGeotab menampilkan puluhan Video
-      // Events pada rentang yang sama sementara di sini cuma segelintir, yang
-      // menjelaskannya bukan angkanya melainkan ISI barisnya: tanggal, tipe dan
-      // solutionId sekaligus memberi tahu apakah MediaFile memang tempat klip
-      // kamera disimpan, atau sesuatu yang lain sama sekali.
-      return `<p class="fa-empty">Permintaan MediaFile <strong>BERHASIL</strong> dan database ini punya
-          <strong>${access.capped ? 'setidaknya ' : ''}${int(access.anyCount)}</strong> MediaFile —
-          tapi tidak satu pun jatuh pada rentang tanggal dan grup yang sedang dipilih.</p>
-        ${sampleTable(access.sample)}
-        <p class="fa-note">Kalau halaman Video Events MyGeotab menampilkan jauh lebih banyak klip daripada
-          angka di atas, berarti klip kamera <strong>tidak</strong> disimpan sebagai MediaFile — entity ini
-          dipakai jalur lain, dan rekamannya tidak terjangkau API publik. Tabel di atas adalah isi
-          sebenarnya dari yang berhasil dibaca.</p>`;
-    };
-
-    /** Isi baris apa adanya. Tanpa ini, "3 MediaFile" tidak memberi tahu apa pun. */
-    const sampleTable = (rows: MediaFileDTO[]): string => {
-      if (rows.length === 0) return '';
-      return `<div class="fa-scroll-table fa-sec-breachwrap">
-        <table class="fa-table">
-          <thead><tr><th>Dari</th><th>Sampai</th><th>Unit</th><th>Tipe</th><th>Status</th><th>Sumber</th></tr></thead>
-          <tbody>${rows
-            .map(
-              (r) => `<tr>
-                <td>${esc(r.fromDate ? formatTime(r.fromDate) : '—')}</td>
-                <td>${esc(r.toDate ? formatTime(r.toDate) : '—')}</td>
-                <td>${esc(r.deviceId ? nameOf(r.deviceId) : '(tanpa unit)')}</td>
-                <td><code>${esc(r.mediaType || '(kosong)')}</code></td>
-                <td><code>${esc(r.status || '(kosong)')}</code></td>
-                <td><code>${esc(r.solutionId || '(tanpa solutionId)')}</code></td>
-              </tr>`
-            )
-            .join('')}</tbody>
-        </table>
-      </div>`;
-    };
-
-    const body =
-      p.total === 0
-        ? verdict()
-        : `<dl class="fa-kpi-detail-list">
-             <dt>Jumlah klip</dt><dd>${int(p.total)} dari ${int(p.deviceCount)} unit berbeda pada rentang ini               ${access.status === 'ok' ? ` &mdash; ${access.capped ? 'setidaknya ' : ''}${int(access.anyCount)} di seluruh database` : ''}</dd>
-             ${dist('Tipe media', p.byMediaType)}
-             ${dist('Status', p.byStatus)}
-             ${dist('Sumber (solutionId)', p.bySolutionId)}
-             <dt>Punya thumbnail</dt><dd>${int(p.withThumbnail)} dari ${int(p.total)}</dd>
-             <dt>Rentang waktu klip</dt><dd>${esc(p.earliest ? formatTime(p.earliest) : '—')} s/d ${esc(p.latest ? formatTime(p.latest) : '—')}</dd>
-             <dt>Insiden yang punya klip</dt>
-             <dd><strong>${int(p.incidentsWithMedia)} dari ${int(p.incidentsTotal)}</strong>
-                 &mdash; dicocokkan berdasarkan unit dan waktu, toleransi &plusmn;${int(MATCH_WINDOW_SEC)} detik.
-                 Ini heuristik: MyGeotab tidak menautkan insiden ke klip, jadi kecocokan waktu
-                 bukan jaminan klipnya merekam kejadian yang sama.</dd>
-           </dl>`;
-
-    return `<section class="fa-sec-panel">
-      <h2 class="fa-sec-title">Diagnostik Rekaman Kamera</h2>
-      <p class="fa-note">Panel sementara untuk memastikan apakah rekaman GO Focus bisa dijangkau add-in
-        ini. Belum ada pemutar video &mdash; yang ditampilkan hanya apa yang benar-benar dikembalikan
-        MyGeotab, apa adanya.</p>
-      ${body}
-    </section>`;
+      </div>
+      ${
+        videoPage
+          ? '<p class="fa-note">Tombol <strong>Rekaman</strong> membuka halaman Video MyGeotab, tersaring ke unit itu pada jendela &plusmn;15 menit di sekitar insiden. Klipnya tidak bisa diputar di sini: rekaman kamera tidak tersedia lewat API publik MyGeotab, jadi add-in ini hanya bisa mengantar Anda ke sana.'
+          : '<p class="fa-note">Rekaman kamera tidak bisa ditampilkan di sini maupun ditautkan: MyGeotab tidak mengekspos klip kamera ke API publik, dan halaman Video bawaannya tidak terjangkau dari add-in ini untuk akun Anda. Buka menu Video di MyGeotab secara terpisah untuk melihat rekamannya.'
+      }</p>${more}`;
   }
 
   function renderBreaches(
@@ -799,7 +685,22 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
   }
 
   function onFeedClick(e: Event): void {
-    const btn = (e.target as HTMLElement | null)?.closest<HTMLButtonElement>('.fa-sec-loc');
+    const target = e.target as HTMLElement | null;
+
+    const vid = target?.closest<HTMLButtonElement>('.fa-sec-vid');
+    if (vid) {
+      const params = videoPageParams({
+        deviceId: vid.dataset.videoDevice ?? '',
+        at: vid.dataset.videoAt ?? '',
+      });
+      // Klip GO Focus tidak ada di API publik (lihat media-file.ts), jadi yang
+      // bisa dilakukan hanyalah mengantar pengguna ke halaman Video bawaan
+      // MyGeotab, tersaring ke unit dan jendela waktu insiden ini.
+      if (videoPage && params) ctx.state?.gotoPage?.(videoPage, params);
+      return;
+    }
+
+    const btn = target?.closest<HTMLButtonElement>('.fa-sec-loc');
     if (btn) showLocation(btn);
   }
 

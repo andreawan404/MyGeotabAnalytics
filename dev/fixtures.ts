@@ -253,28 +253,6 @@ export const rawRules = [
 
 // Get ExceptionEvent returns `rule` as a BARE {id} — no name. Deriving severity
 // from a name that is never present is what bucketed every event as "low".
-// Klip kamera. Sengaja tidak rapi, karena probe-nya justru dibuat untuk
-// melaporkan ketidakrapian: ada yang tanpa solutionId, ada yang statusnya belum
-// Ok, ada unit yang tidak punya klip sama sekali, dan ada klip yang jamnya tidak
-// berdekatan dengan insiden mana pun.
-export const rawMediaFiles = [
-  // Menutupi exc-1 (device-1, 4 jam lalu) — klip 20 detik di sekitar kejadian.
-  { id: 'mf-1', device: { id: 'device-1' }, fromDate: iso(4.003), toDate: iso(3.997),
-    mediaType: 'Video', status: 'Ok', solutionId: 'go-focus', thumbnails: [{ id: 'th-1' }] },
-  // Menutupi exc-2 (device-2, 11 jam lalu).
-  { id: 'mf-2', device: { id: 'device-2' }, fromDate: iso(11.003), toDate: iso(10.997),
-    mediaType: 'Video', status: 'Ok', solutionId: 'go-focus', thumbnails: [{ id: 'th-2' }] },
-  // Foto, bukan video — probe harus memisahkannya.
-  { id: 'mf-3', device: { id: 'device-1' }, fromDate: iso(9.001), toDate: iso(9.0),
-    mediaType: 'Image', status: 'Ok', solutionId: 'go-focus', thumbnails: [] },
-  // Belum selesai diunggah: ada barisnya, tapi belum tentu bisa diputar.
-  { id: 'mf-4', device: { id: 'device-3' }, fromDate: iso(28.003), toDate: iso(27.997),
-    mediaType: 'Video', status: 'Pending', solutionId: null, thumbnails: [] },
-  // Jam yang tidak berdekatan dengan insiden mana pun.
-  { id: 'mf-5', device: { id: 'device-2' }, fromDate: iso(20), toDate: iso(19.99),
-    mediaType: 'Video', status: 'Ok', solutionId: 'kamera-pihak-ketiga', thumbnails: [{ id: 'th-5' }] },
-];
-
 export const rawExceptionEvents = [
   { id: 'exc-1', device: { id: 'device-1' }, rule: { id: 'RuleHarshBrakingId' }, activeFrom: iso(4), activeTo: iso(3.98), duration: dur(0, 1, 12) },
   { id: 'exc-2', device: { id: 'device-2' }, rule: { id: 'RuleSpeedingId' }, activeFrom: iso(11), activeTo: iso(10.9), duration: dur(0, 3, 30) },

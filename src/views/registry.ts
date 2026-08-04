@@ -1,3 +1,5 @@
+import type { GeotabAddinState } from '../addin';
+
 // The single list of dashboard views. side-menu renders it, view-host mounts
 // from it — adding a view means adding one row here and one module.
 //
@@ -10,6 +12,9 @@
 export interface ViewCtx {
   database: string;
   rootEl: HTMLElement;
+  /** State milik host MyGeotab. Opsional: harness dev dan check tidak punya
+   *  host, dan view harus tetap berfungsi tanpanya. */
+  state?: GeotabAddinState;
 }
 
 /** Same contract every component in this add-in follows: mount, return cleanup. */

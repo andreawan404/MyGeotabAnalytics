@@ -20,7 +20,6 @@ import {
   rawFuelTransactions,
   rawDrivers,
   rawDvirLogs,
-  rawMediaFiles,
 } from './fixtures';
 
 const FIXTURES_BY_TYPE_NAME: Record<string, any[]> = {
@@ -38,7 +37,6 @@ const FIXTURES_BY_TYPE_NAME: Record<string, any[]> = {
   FuelTransaction: rawFuelTransactions,
   User: rawDrivers,
   DVIRLog: rawDvirLogs,
-  MediaFile: rawMediaFiles,
 };
 
 // ponytail: params.search is ignored — dev mode returns the full fixture set for
@@ -76,42 +74,9 @@ function resolve(method: string, params: any): any[] {
 
 const LATENCY_MS = 50;
 
-// Simulasi keadaan MediaFile, disetel dari konsol atau skrip uji:
-//   window.__FA_MEDIA_MODE__ = 'denied' | 'empty'
-//
-// Ada karena panel diagnostik rekaman punya TIGA vonis berbeda (ditolak /
-// database kosong / rentangnya saja yang kosong), dan tanpa cara memicunya di
-// dev, dua di antaranya hanya bisa "diyakini benar dari kode" — persis jenis
-// keyakinan yang membuat bug filter grup lolos berbulan-bulan.
-declare global {
-  interface Window {
-    __FA_MEDIA_MODE__?: 'denied' | 'empty' | 'outofrange';
-  }
-}
-
-function mediaMode(): 'denied' | 'empty' | 'outofrange' | undefined {
-  return typeof window === 'undefined' ? undefined : window.__FA_MEDIA_MODE__;
-}
-
 export function createMockApi(): GeotabApi {
   return {
-    call(method, params, cb, errCb) {
-      const mode = mediaMode();
-      if ((params as any)?.typeName === 'MediaFile' && mode) {
-        if (mode === 'denied') {
-          setTimeout(() => errCb?.({ name: 'InvalidUserException', message: 'no rights to MediaFile' }), LATENCY_MS);
-          return;
-        }
-        if (mode === 'outofrange') {
-          // Ada isinya HANYA saat ditanya tanpa search (probe akses); permintaan
-          // yang membawa rentang tanggal mengembalikan kosong.
-          const hasSearch = !!(params as any)?.search;
-          setTimeout(() => cb(hasSearch ? [] : rawMediaFiles.slice(0, 3)), LATENCY_MS);
-          return;
-        }
-        setTimeout(() => cb([]), LATENCY_MS); // 'empty'
-        return;
-      }
+    call(method, params, cb) {
       setTimeout(() => cb(resolve(method, params)), LATENCY_MS);
     },
     multiCall(calls, cb) {

@@ -15,6 +15,13 @@ import { initGlossary } from './components/glossary';
 
 export interface GeotabAddinState {
   database: string;
+  /** Pindah ke halaman MyGeotab lain. Satu-satunya jalan tersisa menuju rekaman
+   *  kamera: klipnya tidak ada di API publik (lihat media-file.ts), jadi yang
+   *  bisa dilakukan add-in hanyalah mengantar pengguna ke halaman Video bawaan. */
+  gotoPage?: (page: string, params?: object) => void;
+  /** Apakah halaman itu ADA dan boleh dibuka pengguna ini. Dipakai supaya
+   *  tombolnya tidak pernah menjanjikan halaman yang tidak akan terbuka. */
+  hasAccessToPage?: (page: string) => boolean;
 }
 
 type Cleanup = () => void;
@@ -74,7 +81,7 @@ export function createAddin(deps: AddinDeps = defaultDeps) {
         if (!appEl) throw new Error('fleetAnalyticsDashboard: #app element not found');
 
         const shell = deps.renderShell(appEl, { database: state.database });
-        const ctx = { database: state.database, rootEl: shell.rootEl };
+        const ctx = { database: state.database, rootEl: shell.rootEl, state };
 
         // Wire each component independently so one failure doesn't take the rest down.
         // filter-bar FIRST: it publishes the current filter that views read at mount.
