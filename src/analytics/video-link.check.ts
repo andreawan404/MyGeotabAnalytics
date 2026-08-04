@@ -54,22 +54,35 @@ assert.equal(new Set(VIDEO_PAGE_CANDIDATES).size, VIDEO_PAGE_CANDIDATES.length);
 assert.ok(VIDEO_PAGE_CANDIDATES.every((p) => p.length > 0));
 
 // --- videoPageParams --------------------------------------------------------
+//
+// Bentuknya epoch milidetik (from/to), BUKAN dateRange ISO. Percobaan pertama
+// memakai bentuk halaman bawaan MyGeotab dan diabaikan sepenuhnya oleh add-in
+// Video — chip tanggalnya tetap "Last 7 days".
 {
+  const at = Date.parse('2026-08-04T10:00:00.000Z');
   const p = videoPageParams({ deviceId: 'b1A8', at: '2026-08-04T10:00:00.000Z' })!;
   assert.ok(p, 'input sah harus menghasilkan parameter');
-  assert.deepStrictEqual(p.selectedEntities, [{ id: 'b1A8' }]);
-  // Jendela ±15 menit: klip dan ExceptionEvent distempel oleh jalur yang
-  // berbeda, jadi meminta pada detik yang persis sama hampir pasti kosong.
-  assert.equal(p.dateRange.startDate, '2026-08-04T09:45:00.000Z');
-  assert.equal(p.dateRange.endDate, '2026-08-04T10:15:00.000Z');
+  assert.equal(typeof p.from, 'number', 'epoch ms, bukan string ISO');
+  assert.equal(typeof p.to, 'number');
+
+  // Jendela ±15 menit, berpusat tepat pada insiden: klip dan ExceptionEvent
+  // distempel jalur berbeda, jadi meminta pada detik yang persis sama hampir
+  // pasti kosong.
+  assert.equal(p.from, at - 15 * 60000);
+  assert.equal(p.to, at + 15 * 60000);
+  assert.equal((p.to - p.from) / 60000, 30);
+
+  // deviceIds SENGAJA tidak ada: nilai aslinya id internal layanan video
+  // (185354), bukan id MyGeotab, dan tidak bisa diturunkan dari API.
+  assert.ok(!('deviceIds' in p), 'jangan kirim deviceIds yang tidak bisa dipetakan');
+  assert.ok(!('dateRange' in p), 'bentuk lama yang diabaikan harus hilang');
+  assert.ok(!('selectedEntities' in p), 'bentuk lama yang diabaikan harus hilang');
 
   const wide = videoPageParams({ deviceId: 'b1A8', at: '2026-08-04T10:00:00.000Z', windowMin: 60 })!;
-  assert.equal(wide.dateRange.startDate, '2026-08-04T09:00:00.000Z');
-  assert.equal(wide.dateRange.endDate, '2026-08-04T11:00:00.000Z');
+  assert.equal((wide.to - wide.from) / 60000, 120);
 
-  // Jendela melewati tengah malam harus tetap benar — tanggalnya ikut mundur.
-  const midnight = videoPageParams({ deviceId: 'x', at: '2026-08-04T00:05:00.000Z' })!;
-  assert.equal(midnight.dateRange.startDate, '2026-08-03T23:50:00.000Z');
+  // Nilai harus bulat: pecahan milidetik di URL tidak berguna dan bikin ribut.
+  assert.ok(Number.isInteger(p.from) && Number.isInteger(p.to));
 }
 
 // Input rusak menghasilkan null, bukan rentang 1970 yang mengantar pengguna ke

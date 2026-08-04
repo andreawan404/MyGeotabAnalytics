@@ -471,7 +471,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
       </div>
       ${
         videoPage
-          ? '<p class="fa-note">Tombol <strong>Rekaman</strong> membuka halaman Video MyGeotab dan meminta penyaringan ke unit tersebut pada jendela &plusmn;15 menit di sekitar insiden &mdash; kalau halaman itu membuka tanpa tersaring, pakai jam dan nama unit di baris ini untuk mencarinya. Klipnya tidak bisa diputar di sini: MyGeotab tidak mengekspos rekaman kamera ke API publik, jadi add-in ini hanya bisa mengantar Anda ke sana.'
+          ? '<p class="fa-note">Tombol <strong>Rekaman</strong> membuka halaman Video MyGeotab, tersaring ke jendela <strong>&plusmn;15 menit</strong> di sekitar insiden. Penyaringan per unit tidak bisa dikirim &mdash; halaman itu memakai id kameranya sendiri, bukan id kendaraan MyGeotab &mdash; jadi cocokkan dengan <strong>nama unit di baris ini</strong> bila ada beberapa klip. Pastikan juga tab kategori di halaman Video sesuai (mis. <em>All</em>), karena tab yang terbuka mengikuti kunjungan Anda sebelumnya. Klipnya tidak bisa diputar di sini: MyGeotab tidak mengekspos rekaman kamera ke API publik.'
           : '<p class="fa-note">Rekaman kamera tidak bisa ditampilkan di sini maupun ditautkan: MyGeotab tidak mengekspos klip kamera ke API publik, dan halaman Video bawaannya tidak terjangkau dari add-in ini untuk akun Anda. Buka menu Video di MyGeotab secara terpisah untuk melihat rekamannya.'
       }</p>${more}`;
   }

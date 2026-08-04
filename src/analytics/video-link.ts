@@ -88,10 +88,24 @@ export interface VideoLinkInput {
   windowMin?: number;
 }
 
+/**
+ * Parameter yang BENAR-BENAR dibaca add-in Video, dibaca dari address bar
+ * setelah pengguna menyaring manual:
+ *
+ *   #addin-geotabvideo-events,visibleCategoryId:30,deviceIds:185354,
+ *     from:1785344400000,to:1785517199999
+ *
+ * Percobaan pertama mengirim dateRange:(startDate,endDate) ISO dan
+ * selectedEntities:!((id:b1)) — bentuk yang dipakai halaman BAWAAN MyGeotab.
+ * Keduanya masuk ke URL dan diabaikan sepenuhnya: chip tanggal tetap membaca
+ * "Last 7 days" dan filter Assets tetap kosong. Klip yang benar tetap muncul
+ * waktu itu, tapi hanya karena kebetulan cuma ada satu Near Collision dalam
+ * tujuh hari — bukan karena penyaringannya bekerja.
+ */
 export interface VideoPageParams {
-  dateRange: { startDate: string; endDate: string };
-  /** Bentuk yang dipakai halaman MyGeotab lain untuk menyorot entity. */
-  selectedEntities: { id: string }[];
+  /** Epoch milidetik. Bukan ISO — add-in ini memakai angka. */
+  from: number;
+  to: number;
 }
 
 /**
@@ -107,11 +121,11 @@ export function videoPageParams(input: VideoLinkInput): VideoPageParams | null {
   const ms = Date.parse(input.at);
   if (Number.isNaN(ms) || !input.deviceId) return null;
   const pad = (input.windowMin ?? 15) * 60 * 1000;
-  return {
-    dateRange: {
-      startDate: new Date(ms - pad).toISOString(),
-      endDate: new Date(ms + pad).toISOString(),
-    },
-    selectedEntities: [{ id: input.deviceId }],
-  };
+  // deviceIds SENGAJA tidak dikirim. Nilai aslinya (185354) bukan id perangkat
+  // MyGeotab — id Geotab berbentuk "b3"/"b1A8" — melainkan id internal layanan
+  // video, dan tidak ada jalan menurunkannya dari API MyGeotab. Mengirim id
+  // Geotab ke sana akan menyaring ke kendaraan yang salah atau ke nol hasil,
+  // dan keduanya lebih buruk daripada menyaring waktu saja: nama unitnya sudah
+  // tertulis di baris insiden, jadi pengguna tetap bisa mengenalinya.
+  return { from: ms - pad, to: ms + pad };
 }
