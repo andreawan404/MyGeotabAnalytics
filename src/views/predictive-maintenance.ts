@@ -25,6 +25,7 @@ import type { ViewCtx } from './registry';
 import { esc, clamp as clampNumber, int } from '../utils/format';
 import { renderExplainCard, bindExplainToggles } from '../components/kpi-explain';
 import { summarizePredictive } from '../analytics/summary';
+import { exportButtonHtml, bindExport } from '../components/export-button';
 import {
   latestValuePerDevice,
   chronicFaults,
@@ -153,6 +154,43 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
   // sedang menjelaskan apa arti interval itu.
   const { open: openPanels, stop: stopExplain } = bindExplainToggles(container);
 
+  /** Baris tabel hasil render terakhir. Kolom yang disembunyikan karena database
+   *  tidak melaporkannya tetap disembunyikan di CSV — mengeksporkan kolom kosong
+   *  mengundang orang mengisinya sendiri. */
+  let lastSignals: DeviceSignals[] = [];
+  let lastFlags = { hasOdometer: false, hasHours: false, hasFaults: false, hasRisk: false, hasDvir: false };
+
+  const stopExport = bindExport(container, () => {
+    if (lastSignals.length === 0) return null;
+    const f = lastFlags;
+    return {
+      filenameBase: 'prediksi-servis',
+      headers: [
+        'Unit',
+        ...(f.hasOdometer ? ['Sisa ke servis (km)'] : []),
+        ...(f.hasHours ? ['Sisa ke servis (jam)'] : []),
+        ...(f.hasFaults ? ['Fault kronis', 'Tren'] : []),
+        ...(f.hasRisk ? ['Risiko Breakdown (Geotab)'] : []),
+        ...(f.hasDvir ? ['DVIR terbuka'] : []),
+        'Jumlah flag', 'Flag',
+      ],
+      rows: lastSignals.map((r) => [
+        r.deviceName,
+        ...(f.hasOdometer ? [r.serviceDueKm === undefined ? null : num(r.serviceDueKm)] : []),
+        ...(f.hasHours ? [r.serviceDueHours === undefined ? null : num(r.serviceDueHours)] : []),
+        ...(f.hasFaults
+          ? [
+              int(r.chronicCount),
+              r.trendRatio === undefined ? null : r.trendRatio === TREND_NO_BASELINE ? 'baru' : r.trendRatio.toFixed(1),
+            ]
+          : []),
+        ...(f.hasRisk ? [r.riskOfBreakdown === undefined ? null : r.riskOfBreakdown.toFixed(2)] : []),
+        ...(f.hasDvir ? [int(r.openDefects)] : []),
+        int(r.flags.length), r.flags.join(', ') || null,
+      ]),
+    };
+  });
+
   let data: Loaded | null = null;
   let chart: Chart | null = null;
   let interval = loadInterval(ctx.database);
@@ -272,6 +310,8 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
     renderKpis(rows, chronic.length, hasOdometer, hasFaults, hasDvir);
     renderControls(hasOdometer, hasHours);
     renderChart(hasFaults ? monthlyFaultCounts(data.faults) : []);
+    lastSignals = rows;
+    lastFlags = { hasOdometer, hasHours, hasFaults, hasRisk, hasDvir };
     renderTable(rows, { hasOdometer, hasHours, hasFaults, hasRisk, hasDvir });
   }
 
@@ -567,7 +607,7 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
     tableEl.innerHTML = `
       <div class="fa-pm-panel">
         <div class="fa-pm-panel-head">
-          <h3 class="fa-pm-title">Tabel inspeksi</h3>
+          <h3 class="fa-pm-title">Tabel inspeksi${exportButtonHtml('pm')}</h3>
           <span class="fa-pm-note">
             Odometer &amp; jam mesin: pembacaan terakhir (jendela ${LATEST_READING_DAYS} hari sebelum akhir filter).
             Fault &amp; DVIR: ${FAULT_WINDOW_DAYS} hari terakhir &mdash; sengaja mengabaikan tanggal mulai pada filter,
@@ -635,6 +675,7 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
     ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     ctx.rootEl.removeEventListener('dashboard:view-shown', onViewShown);
     stopExplain();
+    stopExport();
     chart?.destroy();
     chart = null;
   };

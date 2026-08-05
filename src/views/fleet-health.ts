@@ -16,6 +16,7 @@ import type { ViewCtx } from './registry';
 import { esc, int, one } from '../utils/format';
 import { renderExplainCard, bindExplainToggles } from '../components/kpi-explain';
 import { summarizeFleetHealth } from '../analytics/summary';
+import { exportButtonHtml, bindExport } from '../components/export-button';
 import {
   activeFaults,
   healthSummary,
@@ -56,6 +57,21 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
   // Panel penjelasan yang terbuka bertahan melewati render ulang — ganti filter
   // tidak boleh membanting tutup penjelasan yang sedang dibaca.
   const { open: openPanels, stop: stopExplain } = bindExplainToggles(container);
+
+  /** Peringkat unit hasil render terakhir — export memakai SELURUHNYA, bukan 15
+   *  baris yang tampil di tabel. */
+  let lastRank: ReturnType<typeof rankVehiclesByFault> = [];
+
+  const stopExport = bindExport(container, () => {
+    if (lastRank.length === 0) return null;
+    return {
+      filenameBase: 'kesehatan-armada',
+      headers: ['Unit', 'Lampu Kritis', 'Fault Aktif', 'Fault Terakhir'],
+      rows: lastRank.map((r) => [
+        r.deviceName, int(r.criticalLamps), int(r.activeCount), formatDateTime(r.lastFaultAt),
+      ]),
+    };
+  });
 
   let latestTop: FaultCodeTally[] = [];
   // Every async continuation checks this: a filter change (or teardown) while a
@@ -272,9 +288,10 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
       faultsEl.innerHTML = '<p class="fa-empty">Ada data fault pada rentang ini, tapi tidak ada yang masih aktif — semua sudah selesai atau sudah di-dismiss.</p>';
       return;
     }
+    lastRank = rows; // export memakai SELURUHNYA, bukan TABLE_ROWS yang tampil
     const shown = rows.slice(0, TABLE_ROWS);
     faultsEl.innerHTML = `
-      <h2 class="fh-title">Unit Perlu Perhatian</h2>
+      <h2 class="fh-title">Unit Perlu Perhatian ${exportButtonHtml('health')}</h2>
       <table class="fa-table fh-table">
         <thead><tr><th></th><th>Unit</th>
           <th><button type="button" class="fa-term-link" data-term="mil">Lampu Kritis</button></th>
@@ -470,6 +487,7 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
     runId++; // in-flight loads become stale and will not touch the DOM
     container.removeEventListener('click', onToggle);
     stopExplain();
+    stopExport();
     stopFilter();
   };
 }

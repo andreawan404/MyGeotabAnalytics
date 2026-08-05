@@ -31,6 +31,7 @@ import { onFilterChangeVisible } from './reload-when-visible';
 import { esc, token, int, two, upto1 } from '../utils/format';
 import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
 import { summarizeSafety } from '../analytics/summary';
+import { exportButtonHtml, bindExport } from '../components/export-button';
 import type { ViewCtx } from './registry';
 import {
   CATEGORIES,
@@ -171,6 +172,11 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     const totalKm = trips.reduce((n, t) => n + (t.distanceKm || 0), 0);
     const fleetPer100 = totalKm > 0 ? (events.length / totalKm) * 100 : null;
 
+    lastRanked = ranked;
+    lastTopCat = new Map(
+      ranked.map((r) => [r.name, CATEGORY_LABELS[topCat.get(r.deviceId) ?? 'other']])
+    );
+
     container.innerHTML = `
       <div class="fa-safety">
         <p class="fa-summary">${esc(
@@ -257,7 +263,7 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
         </div>
 
         <section class="fa-safety-section">
-          <h2>Peringkat Unit — terburuk ke terbaik</h2>
+          <h2>Peringkat Unit — terburuk ke terbaik ${exportButtonHtml('safety')}</h2>
           <p class="fa-note">
             Tiga baris teratas disorot: itulah unit dengan pelanggaran per 100 km tertinggi,
             dan tempat coaching paling masuk akal dimulai. Klik tanda panah untuk melihat
@@ -388,6 +394,24 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
   // Panel penjelasan yang terbuka bertahan melewati render ulang.
   const { open: openPanels, stop: stopExplain } = bindExplainToggles(container);
 
+  /** Baris peringkat hasil render terakhir, supaya export tidak menghitung ulang
+   *  maupun mengambil ulang dari API. */
+  let lastRanked: { name: string; events: number; km: number; per100Km: number | null }[] = [];
+  let lastTopCat = new Map<string, string>();
+
+  const stopExport = bindExport(container, () => {
+    if (lastRanked.length === 0) return null;
+    return {
+      filenameBase: 'perilaku-berkendara',
+      headers: ['Unit', 'Pelanggaran', 'Jarak (km)', 'Per 100 km', 'Kategori Teratas'],
+      rows: lastRanked.map((r) => [
+        r.name, int(r.events), upto1(r.km),
+        r.per100Km === null ? null : two(r.per100Km),
+        lastTopCat.get(r.name) ?? null,
+      ]),
+    };
+  });
+
   // Initial paint + refetch when the filter changes (only while this view is the
   // visible one — reload-when-visible.ts keeps six views off the rate limit).
   const unsubscribeFilter = onFilterChangeVisible(ctx.rootEl, container, load);
@@ -421,6 +445,7 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
     ctx.rootEl.removeEventListener('dashboard:view-shown', onShown);
     container.removeEventListener('click', onToggle);
     stopExplain();
+    stopExport();
     unsubscribeFilter();
     destroyCharts();
   };

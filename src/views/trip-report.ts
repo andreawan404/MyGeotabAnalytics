@@ -22,6 +22,7 @@ import { onFilterChangeVisible } from './reload-when-visible';
 import type { ViewCtx } from './registry';
 import { esc, int, upto1 } from '../utils/format';
 import { renderExplainCard, bindExplainToggles } from '../components/kpi-explain';
+import { exportButtonHtml, bindExport } from '../components/export-button';
 import { summarizeTripReport } from '../analytics/summary';
 import type { TripDTO, ZoneDTO, DeviceLite, FilterChangeDetail } from '../api/fetchers/types';
 
@@ -230,6 +231,7 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
           open: openPanels.has('tr-journeys'),
         })}
       </div>
+      <div class="fa-export-bar">${exportButtonHtml('trip')}</div>
       <div class="tr-tablewrap">
         <table class="fa-table tr-table">
           <thead><tr>
@@ -272,6 +274,27 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
 
   // Profil Operasi menulis knob ini ke localStorage lalu menyiarkan event ini.
   // Baca ulang dan render dari data yang sudah ada — tidak ada fetch baru.
+  // Export mengambil SELURUH perjalanan hasil filter, bukan 200 yang tampil.
+  // Batas itu ada supaya browser tidak berat merender; orang meng-export justru
+  // untuk mengolah yang tidak muat di layar.
+  const stopExport = bindExport(container, () => {
+    if (!snapshot) return null;
+    const { trips, zones, devices, fuelByTrip } = snapshot;
+    const rows = buildJourneys(trips, zones, devices, { dwellMinutes, fuelByTrip });
+    const anyFuel = rows.some((r) => r.fuelL !== null);
+    return {
+      filenameBase: 'laporan-perjalanan',
+      headers: ['Unit', 'Dari', 'Berangkat', 'Ke', 'Tiba', 'Durasi', 'Jarak (km)',
+        ...(anyFuel ? ['BBM (L)'] : []), 'Berhenti', 'Pulang-pergi'],
+      rows: rows.map((r) => [
+        r.deviceName, r.fromZone.name, formatWhen(r.departAt), r.toZone.name, formatWhen(r.arriveAt),
+        formatDur(r.durationSec), upto1(r.distanceKm),
+        ...(anyFuel ? [r.fuelL === null ? null : upto1(r.fuelL)] : []),
+        int(r.stops), r.isRoundTrip ? 'Ya' : 'Tidak',
+      ]),
+    };
+  });
+
   const onProfileChange = (): void => {
     dwellMinutes = loadDwell(ctx.database);
     render();
@@ -287,6 +310,7 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
     ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     container.removeEventListener('change', onInput);
     stopExplain();
+    stopExport();
     stopFilter();
   };
 }

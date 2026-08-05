@@ -27,6 +27,7 @@ import { onFilterChangeVisible } from './reload-when-visible';
 import { esc, clamp, token, int, one, upto1, matchesPlate } from '../utils/format';
 import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
 import { summarizeFuel } from '../analytics/summary';
+import { exportButtonHtml, bindExport } from '../components/export-button';
 import type { ViewCtx } from './registry';
 import type {
   FilterChangeDetail,
@@ -414,6 +415,7 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
                value="${esc(query)}">
         <span class="fa-fuel-count" aria-live="polite"></span>
         <span class="fa-fuel-hint">Menyaring grafik dan tabel di bawah sekaligus.</span>
+        ${exportButtonHtml('fuel')}
       </div>
 
       <div class="fa-fuel-panel">
@@ -670,6 +672,23 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
 
   // Profil Operasi menulis knob ini ke localStorage lalu menyiarkan event ini.
   // Baca ulang dan render dari data yang sudah ada — tidak ada fetch baru.
+  // Mengikuti pencarian dan urutan yang aktif — yang TIDAK ikut hanyalah batas
+  // jumlah baris, dan tabel ini memang tidak punya batas.
+  const stopExport = bindExport(container, () => {
+    const shown = query ? lastRows.filter((r) => matchesPlate(r.name, query)) : lastRows;
+    if (shown.length === 0) return null;
+    return {
+      filenameBase: 'konsumsi-bbm',
+      headers: ['Unit', 'Jarak (km)', 'BBM (L)', 'L/100km', 'km/L', ...(lastHasCost ? ['Biaya'] : [])],
+      rows: sortFuelRows(shown, sortKey, sortDir).map((r) => [
+        r.name, fmt(r.km, 0), fmt(r.litres),
+        r.efficiency === null ? null : fmt(r.efficiency),
+        r.economy === null ? null : fmt(r.economy, 2),
+        ...(lastHasCost ? [`${lastCurrency} ${fmt(r.cost ?? 0, 0)}`] : []),
+      ]),
+    };
+  });
+
   const onProfileChange = (): void => {
     settings = loadSettings(ctx.database);
     render();
@@ -685,6 +704,7 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
     ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     ctx.rootEl.removeEventListener('dashboard:view-shown', onShown);
     stopExplain();
+    stopExport();
     destroyCharts();
   };
 }

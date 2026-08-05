@@ -30,6 +30,7 @@ import { esc, clamp, int } from '../utils/format';
 import { renderExplainCard, bindExplainToggles, type KpiExplanation } from '../components/kpi-explain';
 import { summarizeSecurity } from '../analytics/summary';
 import { resolveVideoPage, videoPageParams } from '../analytics/video-link';
+import { exportButtonHtml, bindExport } from '../components/export-button';
 import { toUtcRange } from '../utils/date-range';
 import { DEFAULT_WORKING_HOURS } from '../components/kpi-card';
 import {
@@ -233,6 +234,8 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
     }
 
     incidents.sort((a, b) => b.at.localeCompare(a.at));
+    lastIncidents = incidents;
+    lastNameOf = nameOf;
 
     // The zone filter has been emitted by the filter bar since day one and
     // consumed by nobody — this is what finally reads it.
@@ -336,7 +339,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
       </div>
 
       <section class="fa-sec-panel">
-        <h2 class="fa-sec-title">Insiden Terbaru</h2>
+        <h2 class="fa-sec-title">Insiden Terbaru ${exportButtonHtml('security')}</h2>
         <div class="fa-sec-split">
           <div class="fa-sec-feed">${renderFeed(incidents, nameOf, statusOf)}</div>
           <aside class="fa-sec-mappanel" aria-label="Peta posisi unit">
@@ -599,6 +602,23 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
   // shift tidak boleh membanting tutup panel yang menjelaskan jam shift itu.
   const { open: openPanels, stop: stopExplain } = bindExplainToggles(container);
 
+  /** Insiden hasil render terakhir — export memakai SELURUHNYA, bukan 100 baris
+   *  yang tampil di feed. */
+  let lastIncidents: Incident[] = [];
+  let lastNameOf: (id: string) => string = (id) => id;
+
+  const stopExport = bindExport(container, () => {
+    if (lastIncidents.length === 0) return null;
+    return {
+      filenameBase: 'insiden-keamanan',
+      headers: ['Waktu', 'Unit', 'Kategori', 'Keterangan', 'Keparahan'],
+      rows: lastIncidents.map((i) => [
+        formatTime(i.at), lastNameOf(i.deviceId), CATEGORY_LABEL[i.category], i.label,
+        SEVERITY_LABEL[i.severity],
+      ]),
+    };
+  });
+
   const onProfileChange = (): void => {
     hours = normalizeHours(readJson<SecurityHours>(HOURS_KEY + ctx.database, defaultHours()));
     render();
@@ -722,6 +742,7 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
     ctx.rootEl.removeEventListener('dashboard:profile-change', onProfileChange);
     container.removeEventListener('change', onChange);
     stopExplain();
+    stopExport();
     container.innerHTML = ''; // discards every rendered input with its node
   };
 }

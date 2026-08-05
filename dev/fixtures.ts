@@ -35,6 +35,13 @@ export const rawDevices = [
   { id: 'device-3', name: 'Van Charlie (B 9012 GHI)', groups: [{ id: 'group-2' }] },
   { id: 'device-4', name: 'Van Delta (B 3456 JKL)', groups: [{ id: 'group-2' }] },
   { id: 'device-5', name: 'Motor Echo (B 7890 MNO)', groups: [{ id: 'group-3' }] },
+  // Dua nama BERMASALAH, sengaja. Nama unit adalah teks bebas milik pelanggan
+  // dan mengalir apa adanya ke berkas CSV: yang pertama dieksekusi Excel sebagai
+  // RUMUS kalau tidak dilucuti, yang kedua merusak seluruh kolom di barisnya
+  // kalau tidak dikutip. Tanpa fixture ini, penjagaannya hanya diyakini benar
+  // dari kode.
+  { id: 'device-6', name: '=SUM(1+1)', groups: [{ id: 'group-1' }] },
+  { id: 'device-7', name: 'Depo A; Depo "B"', groups: [{ id: 'group-1' }] },
 ];
 
 export const rawGroups = [
@@ -149,7 +156,33 @@ const TRIP_SPECS: RawTripSpec[] = [
   { id: 'trip-16', deviceId: 'device-4', from: TANGERANG, to: SUDIRMAN, stopHoursAgo: 15, driveHours: 1.1, idleMinutes: 16 },
   { id: 'trip-17', deviceId: 'device-4', from: SUDIRMAN, to: BSD, stopHoursAgo: 44, driveHours: 1.15, idleMinutes: 11 },
   { id: 'trip-18', deviceId: 'device-4', from: BSD, to: TANGERANG, stopHoursAgo: 70, driveHours: 0.55, idleMinutes: 7 },
+
+  // Unit bernama bermasalah HARUS punya perjalanan, kalau tidak ia tidak pernah
+  // muncul di tabel mana pun dan penjagaan CSV-nya tidak teruji end-to-end.
+  { id: 'trip-19', deviceId: 'device-6', from: KEMAYORAN, to: BEKASI, stopHoursAgo: 6, driveHours: 0.9, idleMinutes: 9 },
+  { id: 'trip-20', deviceId: 'device-7', from: BEKASI, to: CIKARANG, stopHoursAgo: 8, driveHours: 0.7, idleMinutes: 6 },
 ];
+
+// Volume, supaya batas tampilan Laporan Perjalanan (200 baris) BENAR-BENAR
+// terlampaui di mode dev. Tanpa ini, keputusan terpenting fitur export — bahwa
+// export mengabaikan batas tampilan — tidak pernah teruji, hanya diyakini dari
+// kode. Deterministik: tidak ada acak.
+// Jarak antar perjalanan 45 menit — di ATAS ambang gabung 15 menit di Laporan
+// Perjalanan. Kalau lebih rapat, semuanya menyatu jadi belasan journey dan
+// batasnya tidak pernah tersentuh. 210 × 0,75 jam = 6,6 hari, masih di dalam
+// rentang bawaan 7 hari.
+for (let i = 0; i < 210; i++) {
+  TRIP_SPECS.push({
+    id: `trip-bulk-${i}`,
+    deviceId: 'device-3',
+    from: i % 2 ? BEKASI : CIKARANG,
+    to: i % 2 ? CIKARANG : BEKASI,
+    stopHoursAgo: 2 + i * 0.75,
+    driveHours: 0.3,
+    idleMinutes: 3 + (i % 7),
+  });
+}
+
 
 // Driver assignment per vehicle. device-4 is deliberately left unidentified
 // (Geotab's UnknownDriverId sentinel) so dev mode exercises BOTH branches of the
