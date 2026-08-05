@@ -16,6 +16,14 @@ const state = {
   },
 };
 
-fleetAnalyticsDashboard().initialize(createMockApi(), state, () => {
+// Instance-nya diekspos supaya skrip uji bisa memanggil blur()/focus() persis
+// seperti MyGeotab. Menguji lewat instance BARU tidak sah: dua instance akan
+// berebut #app dan menghasilkan kegagalan yang tidak pernah terjadi di host.
+const addin = fleetAnalyticsDashboard();
+(window as any).__FA_ADDIN__ = addin;
+(window as any).__FA_STATE__ = state;
+(window as any).__FA_API__ = createMockApi();
+
+addin.initialize((window as any).__FA_API__, state, () => {
   console.log('[dev] dashboard initialized with mock data');
 });

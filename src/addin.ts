@@ -66,6 +66,56 @@ let initializeCalled = false;
 /** Internal factory — the `deps` seam exists only for addin.check.ts. */
 export function createAddin(deps: AddinDeps = defaultDeps) {
   let cleanups: Cleanup[] = [];
+  /** Sudah terpasang? Menjaga focus() tidak memasang lapisan kedua di atas
+   *  yang pertama kalau host memanggilnya tanpa blur() di antaranya. */
+  let mounted = false;
+  /** api & state terakhir dari initialize(). focus() SEHARUSNYA membawanya
+   *  sendiri, tapi tidak semua host mengisinya lengkap — dan kehilangan nama
+   *  database berarti tidak bisa memasang apa pun. */
+  let lastApi: GeotabApi | null = null;
+  let lastState: GeotabAddinState | null = null;
+
+  function mount(api: GeotabApi, state: GeotabAddinState): void {
+    if (mounted) return;
+    deps.initGeotabClient(api);
+
+    const appEl = deps.getAppElement();
+    if (!appEl) throw new Error('fleetAnalyticsDashboard: #app element not found');
+
+    const shell = deps.renderShell(appEl, { database: state.database });
+    const ctx = { database: state.database, rootEl: shell.rootEl, state };
+
+    // Wire each component independently so one failure doesn't take the rest down.
+    // filter-bar FIRST: it publishes the current filter that views read at mount.
+    for (const [name, init, container] of [
+      ['filter-bar', deps.initFilterBar, shell.filterBarContainer],
+      ['operating-profile', deps.initOperatingProfile, shell.toolsContainer],
+      ['glossary', deps.initGlossary, shell.toolsContainer],
+      ['side-menu', deps.initSideMenu, shell.sideMenuContainer],
+      ['view-host', deps.initViewHost, shell.viewContainer],
+    ] as [string, (c: HTMLElement, x: typeof ctx) => Cleanup, HTMLElement][]) {
+      try {
+        cleanups.push(init(container, ctx));
+      } catch (err) {
+        console.error(`fleetAnalyticsDashboard: ${name} failed to initialize`, err);
+      }
+    }
+    mounted = true;
+  }
+
+  function unmount(): void {
+    // One failing cleanup must not strand the others (leaked listeners/maps
+    // accumulate across focus/blur cycles).
+    cleanups.forEach((fn) => {
+      try {
+        fn();
+      } catch (err) {
+        console.error('fleetAnalyticsDashboard: cleanup failed', err);
+      }
+    });
+    cleanups = [];
+    mounted = false;
+  }
 
   return {
     initialize(api: GeotabApi, state: GeotabAddinState, callback: () => void): void {
@@ -73,31 +123,11 @@ export function createAddin(deps: AddinDeps = defaultDeps) {
       // here may escape: a throwing component would hang the add-in entirely.
       // Log and degrade to a partial dashboard instead.
       initializeCalled = true;
-      cleanups = [];
+      lastApi = api;
+      lastState = state;
       try {
-        deps.initGeotabClient(api);
-
-        const appEl = deps.getAppElement();
-        if (!appEl) throw new Error('fleetAnalyticsDashboard: #app element not found');
-
-        const shell = deps.renderShell(appEl, { database: state.database });
-        const ctx = { database: state.database, rootEl: shell.rootEl, state };
-
-        // Wire each component independently so one failure doesn't take the rest down.
-        // filter-bar FIRST: it publishes the current filter that views read at mount.
-        for (const [name, init, container] of [
-          ['filter-bar', deps.initFilterBar, shell.filterBarContainer],
-          ['operating-profile', deps.initOperatingProfile, shell.toolsContainer],
-          ['glossary', deps.initGlossary, shell.toolsContainer],
-          ['side-menu', deps.initSideMenu, shell.sideMenuContainer],
-          ['view-host', deps.initViewHost, shell.viewContainer],
-        ] as [string, (c: HTMLElement, x: typeof ctx) => Cleanup, HTMLElement][]) {
-          try {
-            cleanups.push(init(container, ctx));
-          } catch (err) {
-            console.error(`fleetAnalyticsDashboard: ${name} failed to initialize`, err);
-          }
-        }
+        unmount(); // re-initialize on top of a live instance must not double-wire
+        mount(api, state);
       } catch (err) {
         console.error('fleetAnalyticsDashboard: initialize failed', err);
       } finally {
@@ -105,23 +135,36 @@ export function createAddin(deps: AddinDeps = defaultDeps) {
       }
     },
 
-    focus(_api: GeotabApi, _state: GeotabAddinState): void {
-      // ponytail: no stored "last filter" to re-dispatch — each init* already
-      // fetched a default range in initialize(). Add a stored-filter
-      // re-dispatch here if reopening the menu ever needs to force a refresh.
+    /**
+     * MEMASANG ULANG, bukan no-op.
+     *
+     * blur() membongkar semuanya: view-host mengosongkan area view, side-menu
+     * dan filter-bar melepas listener-nya. Tombol menunya tetap ada di DOM
+     * beserta sorotan halaman terakhir — hanya saja sudah mati. Sebelumnya
+     * focus() tidak membangun apa pun kembali, jadi setiap kali pengguna
+     * berpindah ke halaman MyGeotab lain lalu kembali, add-in ini berubah jadi
+     * cangkang: menu terlihat normal, area isi kosong, dan tidak ada satu pun
+     * klik yang direspon. Itulah "terkadang add-in tidak merespon".
+     *
+     * mount() idempoten, jadi host yang memanggil focus() tanpa blur() di
+     * antaranya tidak menghasilkan lapisan kedua.
+     */
+    focus(api: GeotabApi, state: GeotabAddinState): void {
+      // Host tidak selalu mengisi argumen focus() selengkap initialize().
+      const useApi = api ?? lastApi;
+      const useState = state?.database ? state : lastState;
+      if (!useApi || !useState) return;
+      lastApi = useApi;
+      lastState = useState;
+      try {
+        mount(useApi, useState);
+      } catch (err) {
+        console.error('fleetAnalyticsDashboard: focus failed to remount', err);
+      }
     },
 
     blur(): void {
-      // One failing cleanup must not strand the others (leaked listeners/maps
-      // accumulate across focus/blur cycles).
-      cleanups.forEach((fn) => {
-        try {
-          fn();
-        } catch (err) {
-          console.error('fleetAnalyticsDashboard: cleanup failed', err);
-        }
-      });
-      cleanups = [];
+      unmount();
     },
   };
 }

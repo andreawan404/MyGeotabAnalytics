@@ -144,5 +144,78 @@ for (const fn of ['initialize', 'focus', 'blur'] as const) {
   );
 }
 
+
+// --- blur() lalu focus() harus MEMASANG ULANG -------------------------------
+//
+// Bug sungguhan: blur() membongkar semuanya (view-host mengosongkan area view,
+// side-menu dan filter-bar melepas listener-nya), sementara focus() dulu tidak
+// membangun apa pun kembali. Tombol menunya tetap ada di DOM beserta sorotan
+// halaman terakhir — hanya saja mati. Setiap kali pengguna berpindah ke halaman
+// MyGeotab lain lalu kembali, add-in berubah jadi cangkang yang tidak merespon
+// klik apa pun. Ini yang menjaganya tidak terulang.
+{
+  let mounts = 0;
+  let cleans = 0;
+  const spy = () => {
+    mounts++;
+    return () => {
+      cleans++;
+    };
+  };
+  const a = createAddin({
+    initGeotabClient: () => {},
+    getAppElement: () => ({}) as any,
+    renderShell: () => ({
+      rootEl: {} as any,
+      filterBarContainer: {} as any,
+      sideMenuContainer: {} as any,
+      viewContainer: {} as any,
+      toolsContainer: {} as any,
+    }),
+    initFilterBar: spy,
+    initSideMenu: spy,
+    initViewHost: spy,
+    initOperatingProfile: spy,
+    initGlossary: spy,
+  });
+
+  a.initialize({} as any, { database: 'db1' }, () => {});
+  assert.strictEqual(mounts, 5, 'initialize memasang kelima komponen');
+
+  a.blur();
+  assert.strictEqual(cleans, 5, 'blur membongkar kelimanya');
+
+  a.focus({} as any, { database: 'db1' });
+  assert.strictEqual(mounts, 10, 'focus() harus MEMASANG ULANG, bukan diam');
+
+  // Idempoten: host yang memanggil focus() lagi tanpa blur() di antaranya tidak
+  // boleh menumpuk lapisan kedua — itu akan menggandakan listener dan panggilan
+  // API pada setiap siklus.
+  a.focus({} as any, { database: 'db1' });
+  assert.strictEqual(mounts, 10, 'focus() berulang tanpa blur() tidak memasang lagi');
+
+  a.blur();
+  assert.strictEqual(cleans, 10, 'blur kedua membongkar pemasangan kedua');
+
+  // focus() tanpa state lengkap tetap bisa memasang, memakai state terakhir
+  // dari initialize() — host tidak selalu mengisi argumen focus() selengkap
+  // initialize(), dan kehilangan nama database berarti tidak bisa memasang apa pun.
+  a.focus(undefined as any, undefined as any);
+  assert.strictEqual(mounts, 15, 'focus() tanpa argumen memakai api/state terakhir');
+  a.blur();
+
+  // initialize() di atas instance yang masih hidup tidak boleh menggandakan:
+  // pasang, lalu initialize lagi tanpa blur.
+  a.initialize({} as any, { database: 'db1' }, () => {});
+  const afterFirst = mounts;
+  a.initialize({} as any, { database: 'db1' }, () => {});
+  assert.strictEqual(mounts, afterFirst + 5, 'initialize ulang membongkar dulu, baru memasang');
+  assert.strictEqual(cleans, mounts - 5, 'tidak ada pemasangan yang tertinggal tanpa pembongkaran');
+}
+
+// focus() sebelum initialize() sama sekali: tidak ada api/state untuk dipakai,
+// jadi harus diam — bukan melempar.
+createAddin().focus(undefined as any, undefined as any);
+
 console.log('addin.check.ts: PASS');
 
