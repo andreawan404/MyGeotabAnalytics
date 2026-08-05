@@ -1,5 +1,11 @@
 import assert from 'node:assert';
-import { resolveVideoPage, videoPageParams, VIDEO_PAGE_CANDIDATES, CONFIRMED_VIDEO_PAGE } from './video-link';
+import {
+  resolveVideoPage,
+  videoPageParams,
+  VIDEO_PAGE_CANDIDATES,
+  CONFIRMED_VIDEO_PAGE,
+  ALL_CATEGORIES,
+} from './video-link';
 
 // --- resolveVideoPage -------------------------------------------------------
 //
@@ -83,6 +89,16 @@ assert.ok(VIDEO_PAGE_CANDIDATES.every((p) => p.length > 0));
 
   // Nilai harus bulat: pecahan milidetik di URL tidak berguna dan bikin ribut.
   assert.ok(Number.isInteger(p.from) && Number.isInteger(p.to));
+
+  // Kategori WAJIB dikirim. Tanpa ini nilainya menempel dari kunjungan
+  // sebelumnya, dan insiden benturan bisa mendarat di tab Tailgating lalu
+  // tampak tidak punya rekaman padahal klipnya ada.
+  assert.equal(p.visibleCategoryId, ALL_CATEGORIES);
+  assert.equal(ALL_CATEGORIES, 0, 'tab "All" = 0, dari address bar pelanggan');
+
+  // Klip yang sudah di-dismiss orang lain tetap bukti. Dengan false, pengguna
+  // akan menyimpulkan "tidak ada rekaman" padahal ada.
+  assert.equal(p.showDismissed, true);
 }
 
 // Input rusak menghasilkan null, bukan rentang 1970 yang mengantar pengguna ke

@@ -80,6 +80,9 @@ export function resolveVideoPage(
   return candidates.includes(CONFIRMED_VIDEO_PAGE) ? CONFIRMED_VIDEO_PAGE : null;
 }
 
+/** Tab "All" pada halaman Video. Terkonfirmasi dari address bar pelanggan. */
+export const ALL_CATEGORIES = 0;
+
 export interface VideoLinkInput {
   deviceId: string;
   /** Waktu insiden, ISO. */
@@ -106,6 +109,24 @@ export interface VideoPageParams {
   /** Epoch milidetik. Bukan ISO — add-in ini memakai angka. */
   from: number;
   to: number;
+  /**
+   * 0 = tab "All". Dibaca dari address bar pelanggan saat menekan tab itu:
+   *   #addin-geotabvideo-events,visibleCategoryId:0,showDismissed:false
+   *
+   * WAJIB dikirim. Tanpa ini nilainya MENEMPEL dari kunjungan sebelumnya, jadi
+   * insiden benturan bisa mendarat di tab Tailgating dan tampak tidak punya
+   * rekaman padahal klipnya ada. Kegagalan yang diam seperti itu justru yang
+   * paling berbahaya di halaman berisi insiden keselamatan.
+   */
+  visibleCategoryId: number;
+  /**
+   * true, dan ini berbeda dari default MyGeotab.
+   *
+   * Tujuan tombol ini memvalidasi insiden, dan klip yang sudah di-dismiss orang
+   * lain tetap bukti. Dengan false, klip yang pernah di-dismiss tidak muncul —
+   * dan pengguna akan menyimpulkan "tidak ada rekaman" padahal ada.
+   */
+  showDismissed: boolean;
 }
 
 /**
@@ -127,5 +148,5 @@ export function videoPageParams(input: VideoLinkInput): VideoPageParams | null {
   // Geotab ke sana akan menyaring ke kendaraan yang salah atau ke nol hasil,
   // dan keduanya lebih buruk daripada menyaring waktu saja: nama unitnya sudah
   // tertulis di baris insiden, jadi pengguna tetap bisa mengenalinya.
-  return { from: ms - pad, to: ms + pad };
+  return { from: ms - pad, to: ms + pad, visibleCategoryId: ALL_CATEGORIES, showDismissed: true };
 }
