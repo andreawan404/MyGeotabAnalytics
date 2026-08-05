@@ -1,6 +1,7 @@
 import assert from 'node:assert';
 import { initGeotabClient, type GeotabApi } from '../geotabClient';
 import { fetchTrips } from './trip';
+import { normalizeGroupIds, groupKey, groupDeviceSearch } from './search';
 import { fetchExceptionEvents } from './exception-event';
 import { fetchRules } from './rule';
 import { fetchLogRecords } from './logrecord';
@@ -405,7 +406,7 @@ async function run() {
     });
 
     const scoped = await fetchTrips({
-      database: 'grpdb1', fromDate: '2026-08-01T00:00:00Z', toDate: '2026-08-02T00:00:00Z', groupId: 'grp-a',
+      database: 'grpdb1', fromDate: '2026-08-01T00:00:00Z', toDate: '2026-08-02T00:00:00Z', groupIds: ['grp-a'],
     });
     assert.deepStrictEqual(
       scoped.map((t) => t.id).sort(),
@@ -432,9 +433,82 @@ async function run() {
       multiCall: (_c, cb) => cb([]),
     });
     const rows = await fetchTrips({
-      database: 'grpdb3', fromDate: '2026-08-01T00:00:00Z', toDate: '2026-08-02T00:00:00Z', groupId: 'kosong',
+      database: 'grpdb3', fromDate: '2026-08-01T00:00:00Z', toDate: '2026-08-02T00:00:00Z', groupIds: ['kosong'],
     });
     assert.strictEqual(rows.length, 1, 'grup tanpa device terdeteksi -> jangan saring apa pun');
+  }
+
+  // --- normalisasi pilihan grup ---------------------------------------------
+  //
+  // Urutan dan duplikat TIDAK boleh mempengaruhi hasil maupun kunci cache.
+  // Memilih [A,B] lalu [B,A] adalah pilihan yang sama; tanpa normalisasi
+  // keduanya jadi dua entri cache berbeda dan penyaringan yang sama diambil ulang.
+  assert.deepStrictEqual(normalizeGroupIds(['b', 'a']), ['a', 'b'], 'urut, supaya kunci cache stabil');
+  assert.deepStrictEqual(normalizeGroupIds(['a', 'a', 'b']), ['a', 'b'], 'duplikat dibuang');
+  assert.deepStrictEqual(normalizeGroupIds(['a', '', undefined as any]), ['a'], 'nilai kosong dibuang');
+  assert.deepStrictEqual(normalizeGroupIds(undefined), []);
+  assert.deepStrictEqual(normalizeGroupIds([]), []);
+
+  assert.strictEqual(groupKey(['b', 'a']), groupKey(['a', 'b']), 'kunci cache tidak boleh bergantung urutan');
+  assert.strictEqual(groupKey(undefined), '', 'tanpa grup = kunci kosong, sama seperti sebelumnya');
+
+  assert.deepStrictEqual(groupDeviceSearch(undefined), {}, 'tanpa grup: tidak ada properti search');
+  assert.deepStrictEqual(groupDeviceSearch(['a', 'b']), {
+    deviceSearch: { groups: [{ id: 'a' }, { id: 'b' }] },
+  });
+
+  // --- beberapa grup = GABUNGAN unitnya --------------------------------------
+  //
+  // Memilih dua depo berarti "tampilkan keduanya", bukan "tampilkan unit yang
+  // ada di dua-duanya". Irisan akan mengosongkan halaman pada armada mana pun
+  // yang grupnya tidak bertumpuk — dan itu keadaan yang normal.
+  {
+    const byGroup: Record<string, { id: string; name: string; groups: { id: string }[] }[]> = {
+      'grp-a': [{ id: 'd1', name: 'A1', groups: [{ id: 'grp-a' }] }],
+      'grp-b': [{ id: 'd2', name: 'B1', groups: [{ id: 'grp-b' }] }],
+    };
+    const allTrips = [
+      { id: 't1', device: { id: 'd1' }, start: '2026-08-01T01:00:00Z', stop: '2026-08-01T02:00:00Z', distance: 1 },
+      { id: 't2', device: { id: 'd2' }, start: '2026-08-01T03:00:00Z', stop: '2026-08-01T04:00:00Z', distance: 2 },
+      { id: 't3', device: { id: 'd9' }, start: '2026-08-01T05:00:00Z', stop: '2026-08-01T06:00:00Z', distance: 3 },
+    ];
+    initGeotabClient({
+      call: (_m, params: any, cb) => {
+        if (params?.typeName === 'Device') {
+          const g = params?.search?.groups?.[0]?.id;
+          cb(g ? (byGroup[g] ?? []) : Object.values(byGroup).flat());
+          return;
+        }
+        cb(allTrips); // Trip: search diabaikan, seperti server sungguhan
+      },
+      multiCall: (_c, cb) => cb([]),
+    });
+
+    const both = await fetchTrips({
+      database: 'multi1', fromDate: '2026-08-01T00:00:00Z', toDate: '2026-08-02T00:00:00Z',
+      groupIds: ['grp-a', 'grp-b'],
+    });
+    assert.deepStrictEqual(both.map((t) => t.id).sort(), ['t1', 't2'], 'gabungan kedua grup, tanpa d9');
+
+    const onlyA = await fetchTrips({
+      database: 'multi2', fromDate: '2026-08-01T00:00:00Z', toDate: '2026-08-02T00:00:00Z',
+      groupIds: ['grp-a'],
+    });
+    assert.deepStrictEqual(onlyA.map((t) => t.id), ['t1'], 'satu grup tetap seperti sebelumnya');
+
+    // Urutan pilih tidak boleh mengubah hasil.
+    const reversed = await fetchTrips({
+      database: 'multi3', fromDate: '2026-08-01T00:00:00Z', toDate: '2026-08-02T00:00:00Z',
+      groupIds: ['grp-b', 'grp-a'],
+    });
+    assert.deepStrictEqual(reversed.map((t) => t.id).sort(), ['t1', 't2']);
+
+    // Daftar kosong = seluruh armada, sama seperti tanpa grup sama sekali.
+    const none = await fetchTrips({
+      database: 'multi4', fromDate: '2026-08-01T00:00:00Z', toDate: '2026-08-02T00:00:00Z',
+      groupIds: [],
+    });
+    assert.strictEqual(none.length, 3, 'tanpa pilihan grup = tidak menyaring');
   }
 
   console.log('fetchers.check.ts: PASS');

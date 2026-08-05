@@ -1,6 +1,7 @@
 import { callApi } from '../geotabClient';
 import { getCached, setCached, buildCacheKey } from '../../utils/cache';
 import type { DeviceLite } from './types';
+import { normalizeGroupIds } from './search';
 
 const TTL_MS = 30 * 60 * 1000;
 
@@ -18,18 +19,37 @@ const TTL_MS = 30 * 60 * 1000;
  */
 export async function fetchDevices(params: {
   database: string;
-  groupId?: string;
+  groupIds?: string[];
   fromDate?: string;
   toDate?: string;
 }): Promise<DeviceLite[]> {
-  const key = buildCacheKey(params.database, 'device', params.groupId ?? '', params.fromDate ?? '', params.toDate ?? '');
+  const groups = normalizeGroupIds(params.groupIds);
+
+  // Beberapa grup: ambil per grup lalu GABUNGKAN. Sengaja lewat pemanggilan
+  // satu-grup, bukan satu permintaan berisi semua grup, karena dengan begitu
+  // tiap grup memakai entri cache-nya sendiri — menambah atau membuang satu
+  // grup dari pilihan hanya membebani grup yang berubah, bukan seluruhnya.
+  //
+  // Penggabungan dilakukan di klien karena keanggotaan grup di MyGeotab
+  // berbentuk pohon, dan server yang menyelesaikan pohonnya untuk SATU grup.
+  if (groups.length > 1) {
+    const lists = await Promise.all(
+      groups.map((id) => fetchDevices({ ...params, groupIds: [id] }))
+    );
+    const byId = new Map<string, DeviceLite>();
+    for (const list of lists) for (const d of list) byId.set(d.id, d);
+    return [...byId.values()];
+  }
+
+  const groupId = groups[0];
+  const key = buildCacheKey(params.database, 'device', groupId ?? '', params.fromDate ?? '', params.toDate ?? '');
   const cached = await getCached<DeviceLite[]>(key);
   if (cached) return cached;
 
   // For Device the group filter is a top-level DeviceSearch property — NOT
   // nested under deviceSearch the way Trip/ExceptionEvent/LogRecord need it.
   const search = {
-    ...(params.groupId ? { groups: [{ id: params.groupId }] } : {}),
+    ...(groupId ? { groups: [{ id: groupId }] } : {}),
     ...(params.fromDate ? { fromDate: params.fromDate } : {}),
     ...(params.toDate ? { toDate: params.toDate } : {}),
   };

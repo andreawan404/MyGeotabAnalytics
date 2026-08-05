@@ -77,7 +77,7 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
     trips: TripDTO[],
     fromIso: string,
     toIso: string,
-    groupId?: string
+    groupIds?: string[]
   ): Promise<Record<string, number | null>> {
     if (trips.length === 0) return {};
     try {
@@ -89,7 +89,7 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
         database: ctx.database,
         diagnosticIds: [diagnosticId],
         toIso,
-        groupId,
+        groupIds,
       });
       if (probe[diagnosticId] !== true) return {};
 
@@ -98,7 +98,7 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
         diagnosticId,
         fromDate: fromIso,
         toDate: toIso,
-        groupId,
+        groupIds,
       });
       return fuelPerTrip(trips, rows);
     } catch (err) {
@@ -112,17 +112,17 @@ export function initTripReportView(container: HTMLElement, ctx: ViewCtx): () => 
     const run = ++seq;
     container.innerHTML = '<p class="fa-loading">Memuat laporan perjalanan…</p>';
     const { fromIso, toIso } = toUtcRange(filter.dateFrom, filter.dateTo);
-    const groupId = filter.groupId;
+    const groupIds = filter.groupIds;
 
     try {
       const [trips, zones, devices] = await Promise.all([
-        fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
+        fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupIds }),
         fetchZones({ database: ctx.database }),
-        fetchDevices({ database: ctx.database, groupId, fromDate: fromIso, toDate: toIso }),
+        fetchDevices({ database: ctx.database, groupIds, fromDate: fromIso, toDate: toIso }),
       ]);
       if (run !== seq) return;
 
-      const fuelByTrip = await loadFuel(trips, fromIso, toIso, groupId);
+      const fuelByTrip = await loadFuel(trips, fromIso, toIso, groupIds);
       if (run !== seq) return;
 
       snapshot = { trips, zones, devices, fuelByTrip };

@@ -86,11 +86,11 @@ export function initSafetyView(container: HTMLElement, ctx: ViewCtx): () => void
 
     try {
       const { fromIso, toIso } = toUtcRange(filter.dateFrom, filter.dateTo);
-      const groupId = filter.groupId;
+      const groupIds = filter.groupIds;
       const [events, trips, devices, drivers, rules, diagnostics] = await Promise.all([
-        fetchExceptionEvents({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
-        fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
-        fetchDevices({ database: ctx.database, groupId, fromDate: fromIso, toDate: toIso }),
+        fetchExceptionEvents({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupIds }),
+        fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupIds }),
+        fetchDevices({ database: ctx.database, groupIds, fromDate: fromIso, toDate: toIso }),
         // Driver names are a nicety; a permission error here must not blank the view.
         fetchDrivers({ database: ctx.database }).catch((err) => {
           console.warn('safety: fetchDrivers failed, continuing without names', err);

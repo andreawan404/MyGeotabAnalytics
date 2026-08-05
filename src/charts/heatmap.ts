@@ -126,14 +126,14 @@ export function initHeatmap(container: HTMLElement, ctx: { database: string; roo
     map.fitBounds(bounds, { maxZoom: 14 });
   }
 
-  async function load(dateFrom: string, dateTo: string, groupId?: string) {
+  async function load(dateFrom: string, dateTo: string, groupIds?: string[]) {
     try {
       const { fromIso, toIso } = toUtcRange(dateFrom, dateTo);
       const records = await fetchLogRecords({
         database: ctx.database,
         fromDate: fromIso,
         toDate: toIso,
-        groupId,
+        groupIds,
         resultsLimit: RESULTS_LIMIT,
       });
       lastBuckets = aggregatePoints(records);
@@ -156,7 +156,7 @@ export function initHeatmap(container: HTMLElement, ctx: { database: string; roo
 
   function onFilterChange(e: Event) {
     const detail = (e as CustomEvent<FilterChangeDetail>).detail;
-    load(detail.dateFrom, detail.dateTo, detail.groupId);
+    load(detail.dateFrom, detail.dateTo, detail.groupIds);
   }
 
   // Leaflet measures its container once, at creation. Inside a hidden view that

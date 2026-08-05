@@ -23,8 +23,23 @@
 
 import { fetchDevices } from './device';
 
-export function groupDeviceSearch(groupId?: string): object {
-  return groupId ? { deviceSearch: { groups: [{ id: groupId }] } } : {};
+/**
+ * Urutan dan duplikat TIDAK boleh mempengaruhi hasil maupun kunci cache.
+ * Memilih [A,B] lalu [B,A] adalah pilihan yang sama; tanpa normalisasi keduanya
+ * jadi dua entri cache berbeda dan satu penyaringan yang sama diambil ulang.
+ */
+export function normalizeGroupIds(groupIds?: string[]): string[] {
+  return [...new Set((groupIds ?? []).filter(Boolean))].sort();
+}
+
+/** Bagian kunci cache untuk pilihan grup. Stabil terhadap urutan pilih. */
+export function groupKey(groupIds?: string[]): string {
+  return normalizeGroupIds(groupIds).join(',');
+}
+
+export function groupDeviceSearch(groupIds?: string[]): object {
+  const groups = normalizeGroupIds(groupIds);
+  return groups.length ? { deviceSearch: { groups: groups.map((id) => ({ id })) } } : {};
 }
 
 /**
@@ -58,11 +73,14 @@ export function filterByDeviceIds<T extends { device?: { id?: string } | null }>
 export async function restrictToGroup<T extends { device?: { id?: string } | null }>(
   rows: T[],
   database: string,
-  groupId?: string
+  groupIds?: string[]
 ): Promise<T[]> {
-  if (!groupId) return rows;
+  const groups = normalizeGroupIds(groupIds);
+  if (groups.length === 0) return rows;
   try {
-    const devices = await fetchDevices({ database, groupId });
+    // Beberapa grup = GABUNGAN unitnya, bukan irisan. Memilih dua depo berarti
+    // "tampilkan keduanya", bukan "tampilkan unit yang ada di dua-duanya".
+    const devices = await fetchDevices({ database, groupIds: groups });
     // Grup kosong (atau Device yang juga tidak tersaring server) sengaja tidak
     // memicu penyaringan: mengembalikan nol baris di sini akan mengubah bug
     // "terlalu banyak data" jadi "halaman kosong tanpa sebab", yang lebih buruk.

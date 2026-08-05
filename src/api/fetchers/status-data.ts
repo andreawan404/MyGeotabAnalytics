@@ -1,7 +1,7 @@
 import { callApi, multiCall } from '../geotabClient';
 import { getCached, setCached, buildCacheKey } from '../../utils/cache';
 import type { StatusDataDTO } from './types';
-import { groupDeviceSearch, restrictToGroup } from './search';
+import { groupDeviceSearch, restrictToGroup, groupKey } from './search';
 
 const TTL_MS = 5 * 60 * 1000;
 const DEFAULT_LIMIT = 50000;
@@ -19,7 +19,7 @@ interface Query {
   database: string;
   fromDate: string;
   toDate: string;
-  groupId?: string;
+  groupIds?: string[];
   resultsLimit?: number;
 }
 
@@ -30,7 +30,7 @@ function getParams(diagnosticId: string, q: Query): object {
       diagnosticSearch: { id: diagnosticId },
       fromDate: q.fromDate,
       toDate: q.toDate,
-      ...groupDeviceSearch(q.groupId),
+      ...groupDeviceSearch(q.groupIds),
     },
     resultsLimit: q.resultsLimit ?? DEFAULT_LIMIT,
   };
@@ -45,7 +45,7 @@ function cacheKey(diagnosticId: string, q: Query): string {
     diagnosticId,
     q.fromDate,
     q.toDate,
-    q.groupId ?? '',
+    groupKey(q.groupIds),
     q.resultsLimit ?? DEFAULT_LIMIT
   );
 }
@@ -58,7 +58,7 @@ export async function fetchStatusData(params: Query & { diagnosticId: string }):
   const raw = await callApi<any[]>('Get', getParams(params.diagnosticId, params));
 
   // Keanggotaan grup ditegakkan di klien: search-nya diabaikan server (search.ts).
-  const scoped = await restrictToGroup(raw, params.database, params.groupId);
+  const scoped = await restrictToGroup(raw, params.database, params.groupIds);
   const dtos = scoped.map(toDTO);
   await setCached(key, dtos, TTL_MS);
   return dtos;
@@ -88,7 +88,7 @@ export async function fetchStatusDataMulti(
     // Melewatkannya di sini akan membuat odometer dan jam mesin tetap
     // fleet-wide sementara sisa halaman sudah tersaring — beda angka di satu
     // layar, jenis kesalahan yang paling lama tidak disadari.
-    const scoped = await restrictToGroup(results[i] ?? [], params.database, params.groupId);
+    const scoped = await restrictToGroup(results[i] ?? [], params.database, params.groupIds);
     const dtos = scoped.map(toDTO);
     out[missing[i]] = dtos;
     await setCached(cacheKey(missing[i], params), dtos, TTL_MS);

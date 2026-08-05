@@ -173,14 +173,14 @@ export function initSecurityView(container: HTMLElement, ctx: ViewCtx): () => vo
     container.innerHTML = '<p class="fa-loading">Memuat data keamanan…</p>';
     try {
       const { fromIso, toIso } = toUtcRange(filter.dateFrom, filter.dateTo);
-      const groupId = filter.groupId;
+      const groupIds = filter.groupIds;
       const [events, zones, statuses, drivers, devices, trips, rules] = await Promise.all([
-        fetchExceptionEvents({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
+        fetchExceptionEvents({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupIds }),
         fetchZones({ database: ctx.database }),
         fetchDeviceStatus({ database: ctx.database }),
         fetchDrivers({ database: ctx.database }),
-        fetchDevices({ database: ctx.database, groupId, fromDate: fromIso, toDate: toIso }),
-        fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
+        fetchDevices({ database: ctx.database, groupIds, fromDate: fromIso, toDate: toIso }),
+        fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupIds }),
         fetchRules({ database: ctx.database }),
       ]);
       if (seq !== loadSeq) return;

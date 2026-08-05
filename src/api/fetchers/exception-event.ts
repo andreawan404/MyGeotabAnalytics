@@ -4,7 +4,7 @@ import type { ExceptionEventDTO } from './types';
 import { parseDurationSec } from './parseDuration';
 import { deriveSeverity } from './rule-severity';
 import { fetchRules } from './rule';
-import { groupDeviceSearch, restrictToGroup } from './search';
+import { groupDeviceSearch, restrictToGroup, groupKey } from './search';
 
 const TTL_MS = 5 * 60 * 1000;
 const RESULTS_LIMIT = 50000;
@@ -42,9 +42,9 @@ export async function fetchExceptionEvents(params: {
   database: string;
   fromDate: string;
   toDate: string;
-  groupId?: string;
+  groupIds?: string[];
 }): Promise<ExceptionEventDTO[]> {
-  const key = buildCacheKey(params.database, 'exception-event', params.fromDate, params.toDate, params.groupId ?? '');
+  const key = buildCacheKey(params.database, 'exception-event', params.fromDate, params.toDate, groupKey(params.groupIds));
   const cached = await getCached<ExceptionEventDTO[]>(key);
   if (cached) return cached;
 
@@ -55,7 +55,7 @@ export async function fetchExceptionEvents(params: {
       search: {
         fromDate: params.fromDate,
         toDate: params.toDate,
-        ...groupDeviceSearch(params.groupId),
+        ...groupDeviceSearch(params.groupIds),
       },
       resultsLimit: RESULTS_LIMIT,
     }),
@@ -64,7 +64,7 @@ export async function fetchExceptionEvents(params: {
 
   const ruleNameById = new Map(rules.map((r) => [r.id, r.name]));
   // Keanggotaan grup ditegakkan di klien: search-nya diabaikan server (search.ts).
-  const scoped = await restrictToGroup(raw, params.database, params.groupId);
+  const scoped = await restrictToGroup(raw, params.database, params.groupIds);
   const dtos = scoped.map((r) => toDTO(r, ruleNameById));
   await setCached(key, dtos, TTL_MS);
   return dtos;

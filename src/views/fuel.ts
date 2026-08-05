@@ -195,7 +195,7 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
   async function load(filter: FilterChangeDetail): Promise<void> {
     const token = ++loadToken;
     const { fromIso, toIso } = toUtcRange(filter.dateFrom, filter.dateTo);
-    const groupId = filter.groupId;
+    const groupIds = filter.groupIds;
     const database = ctx.database;
 
     setHtml('<p class="fa-loading">Memuat data BBM…</p>');
@@ -205,9 +205,9 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
       // heuristic), and FuelTransaction doubles as its own probe — if it comes
       // back non-empty it IS the data, so nothing here is a wasted call.
       const [trips, devices, transactions] = await Promise.all([
-        fetchTrips({ database, fromDate: fromIso, toDate: toIso, groupId }),
-        fetchDevices({ database, groupId, fromDate: fromIso, toDate: toIso }),
-        fetchFuelTransactions({ database, fromDate: fromIso, toDate: toIso, groupId }),
+        fetchTrips({ database, fromDate: fromIso, toDate: toIso, groupIds }),
+        fetchDevices({ database, groupIds, fromDate: fromIso, toDate: toIso }),
+        fetchFuelTransactions({ database, fromDate: fromIso, toDate: toIso, groupIds }),
       ]);
 
       const availability = {
@@ -232,7 +232,7 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
           database,
           diagnosticIds: [WELL_KNOWN_DIAGNOSTICS.fuelLevel, ...(cumulativeId ? [cumulativeId] : [])],
           toIso,
-          groupId,
+          groupIds,
         });
         availability.cumulative = cumulativeId ? probe[cumulativeId] === true : false;
         availability.level = probe[WELL_KNOWN_DIAGNOSTICS.fuelLevel] === true;
@@ -249,7 +249,7 @@ export function initFuelView(container: HTMLElement, ctx: ViewCtx): () => void {
           diagnosticIds: [diagnosticId],
           fromDate: fromIso,
           toDate: toIso,
-          groupId,
+          groupIds,
         });
         rows = byId[diagnosticId] ?? [];
       }

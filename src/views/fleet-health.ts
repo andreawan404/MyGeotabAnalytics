@@ -79,9 +79,9 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
     let devices: DeviceLite[];
     try {
       const [faults, diags, devs] = await Promise.all([
-        fetchFaultData({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId: filter.groupId }),
+        fetchFaultData({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupIds: filter.groupIds }),
         fetchDiagnostics({ database: ctx.database }),
-        fetchDevices({ database: ctx.database, groupId: filter.groupId, fromDate: fromIso, toDate: toIso }),
+        fetchDevices({ database: ctx.database, groupIds: filter.groupIds, fromDate: fromIso, toDate: toIso }),
       ]);
       if (run !== runId) return;
       diagnostics = diags;
@@ -115,7 +115,7 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
 
     // Usage is independent of faults and much slower (probe + StatusData), so it
     // is awaited separately — the fault panels are already on screen by now.
-    await loadUsage(run, toIso, filter.groupId, diagnostics, devices);
+    await loadUsage(run, toIso, filter.groupIds, diagnostics, devices);
   }
 
   // Active / Pending / resolved are disjoint and sum to the row count — the three
@@ -344,7 +344,7 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
   async function loadUsage(
     run: number,
     toIso: string,
-    groupId: string | undefined,
+    groupIds: string[] | undefined,
     diagnostics: DiagnosticDTO[],
     devices: DeviceLite[]
   ): Promise<void> {
@@ -356,7 +356,7 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
         database: ctx.database,
         diagnosticIds: [engineHoursId, odometerId],
         toIso,
-        groupId,
+        groupIds,
       });
       if (run !== runId) return;
 
@@ -375,7 +375,7 @@ export function initFleetHealthView(container: HTMLElement, ctx: ViewCtx): () =>
         diagnosticIds: wanted,
         fromDate: fromIso,
         toDate: toIso,
-        groupId,
+        groupIds,
         resultsLimit: USAGE_LIMIT,
       });
       if (run !== runId) return;

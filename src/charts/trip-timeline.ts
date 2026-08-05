@@ -168,19 +168,19 @@ async function fetchFuelRows(params: {
   trips: TripDTO[];
   fromIso: string;
   toIso: string;
-  groupId?: string;
+  groupIds?: string[];
 }) {
-  const { database, trips, fromIso, toIso, groupId } = params;
+  const { database, trips, fromIso, toIso, groupIds } = params;
   if (trips.length === 0) return [];
 
   const diagnostics = await fetchDiagnostics({ database }); // near-static, cached 24h
   const diagnosticId = resolveCumulativeFuelDiagnosticId(diagnostics);
   if (!diagnosticId) return [];
 
-  const probe = await probeDiagnostics({ database, diagnosticIds: [diagnosticId], toIso, groupId });
+  const probe = await probeDiagnostics({ database, diagnosticIds: [diagnosticId], toIso, groupIds });
   if (probe[diagnosticId] !== true) return [];
 
-  return fetchStatusData({ database, diagnosticId, fromDate: fromIso, toDate: toIso, groupId });
+  return fetchStatusData({ database, diagnosticId, fromDate: fromIso, toDate: toIso, groupIds });
 }
 
 export function initTripTimeline(container: HTMLElement, ctx: { database: string; rootEl: HTMLElement }): () => void {
@@ -510,19 +510,19 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
     renderAxis(); // lebar area plot bergeser saat nama unit terpanjang tersaring
   }
 
-  async function load(dateFrom: string, dateTo: string, groupId?: string) {
+  async function load(dateFrom: string, dateTo: string, groupIds?: string[]) {
     const token = ++loadToken;
     try {
       const { fromIso, toIso } = toUtcRange(dateFrom, dateTo);
       const [trips, devices] = await Promise.all([
-        fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
-        fetchDevices({ database: ctx.database, groupId, fromDate: fromIso, toDate: toIso }),
+        fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupIds }),
+        fetchDevices({ database: ctx.database, groupIds, fromDate: fromIso, toDate: toIso }),
       ]);
 
       // Fuel is a tooltip nicety — it must never cost us the chart.
       let fuelRows: Awaited<ReturnType<typeof fetchFuelRows>> = [];
       try {
-        fuelRows = await fetchFuelRows({ database: ctx.database, trips, fromIso, toIso, groupId });
+        fuelRows = await fetchFuelRows({ database: ctx.database, trips, fromIso, toIso, groupIds });
       } catch (err) {
         console.warn('trip-timeline: fuel lookup failed, tooltip will show "—"', err);
       }
@@ -620,7 +620,7 @@ export function initTripTimeline(container: HTMLElement, ctx: { database: string
 
   function onFilterChange(e: Event) {
     const detail = (e as CustomEvent<FilterChangeDetail>).detail;
-    load(detail.dateFrom, detail.dateTo, detail.groupId);
+    load(detail.dateFrom, detail.dateTo, detail.groupIds);
   }
 
   // `dashboard:view-shown` is broadcast on the SHARED rootEl for EVERY view,

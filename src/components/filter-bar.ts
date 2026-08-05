@@ -55,9 +55,22 @@ export function initFilterBar(container: HTMLElement, ctx: { database: string; r
     <label class="fa-field">Sampai
       <input type="datetime-local" id="fa-date-to" value="${defaults.dateTo}">
     </label>
-    <label class="fa-field">Grup
-      <select id="fa-group"><option value="">Semua grup</option></select>
-    </label>
+    <div class="fa-field fa-groups" id="fa-group-field">
+      <span class="fa-groups-label" id="fa-group-label">Grup</span>
+      <button type="button" class="fa-groups-btn" id="fa-group-btn"
+              aria-haspopup="true" aria-expanded="false" aria-labelledby="fa-group-label fa-group-btn">
+        <span id="fa-group-summary">Semua grup</span><span class="fa-groups-caret" aria-hidden="true">&#9662;</span>
+      </button>
+      <div class="fa-groups-pop" id="fa-group-pop" role="group" aria-label="Pilih grup" hidden>
+        <input type="search" class="fa-groups-search" id="fa-group-search"
+               placeholder="Cari grup&hellip;" aria-label="Cari nama grup">
+        <div class="fa-groups-bulk">
+          <button type="button" data-bulk="all">Pilih semua</button>
+          <button type="button" data-bulk="none">Kosongkan</button>
+        </div>
+        <div class="fa-groups-list" id="fa-group-list"></div>
+      </div>
+    </div>
     <label class="fa-field" id="fa-zone-field">Zona
       <select id="fa-zone"><option value="">Semua zona</option></select>
     </label>
@@ -69,13 +82,25 @@ export function initFilterBar(container: HTMLElement, ctx: { database: string; r
   const hintEl = container.querySelector<HTMLElement>('.fa-filter-hint')!;
   const dateFromEl = container.querySelector<HTMLInputElement>('#fa-date-from')!;
   const dateToEl = container.querySelector<HTMLInputElement>('#fa-date-to')!;
-  const groupEl = container.querySelector<HTMLSelectElement>('#fa-group')!;
+  const groupBtn = container.querySelector<HTMLButtonElement>('#fa-group-btn')!;
+  const groupPop = container.querySelector<HTMLElement>('#fa-group-pop')!;
+  const groupSearch = container.querySelector<HTMLInputElement>('#fa-group-search')!;
+  const groupList = container.querySelector<HTMLElement>('#fa-group-list')!;
+  const groupSummary = container.querySelector<HTMLElement>('#fa-group-summary')!;
+
+  /** Semua grup di database, dan mana yang tercentang. Kosong = seluruh armada
+   *  — sama seperti "Semua grup" pada dropdown lama. */
+  let allGroups: { id: string; name: string }[] = [];
+  const picked = new Set<string>();
   const zoneEl = container.querySelector<HTMLSelectElement>('#fa-zone')!;
   const zoneFieldEl = container.querySelector<HTMLElement>('#fa-zone-field')!;
   const scopeEl = container.querySelector<HTMLElement>('.fa-filter-scope')!;
 
   fetchGroups({ database: ctx.database })
-    .then((groups) => appendOptions(groupEl, groups))
+    .then((groups) => {
+      allGroups = groups;
+      renderGroupList();
+    })
     .catch((err) => console.error('filter-bar: fetchGroups failed', err));
 
   fetchZones({ database: ctx.database })
@@ -92,6 +117,97 @@ export function initFilterBar(container: HTMLElement, ctx: { database: string; r
     hintTimer = setTimeout(() => {
       hintEl.hidden = true;
     }, HINT_MS);
+  }
+
+  // --- daftar grup ------------------------------------------------------------
+
+  function escAttr(v: string): string {
+    return v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  }
+
+  /**
+   * Menggambar ulang daftar centang, tersaring kotak cari.
+   *
+   * Grup yang SUDAH tercentang tetap ditampilkan walau tidak cocok pencarian.
+   * Menyembunyikannya membuat pilihan aktif seolah hilang, dan pengguna
+   * mengosongkan pencarian lalu terkejut menemukan grup yang tidak diingatnya
+   * masih tercentang.
+   */
+  function renderGroupList(): void {
+    const q = groupSearch.value.trim().toLowerCase();
+    const shown = allGroups.filter((g) => !q || picked.has(g.id) || g.name.toLowerCase().includes(q));
+
+    groupList.innerHTML = shown.length
+      ? shown
+          .map(
+            (g) => `<label class="fa-groups-item">
+              <input type="checkbox" value="${escAttr(g.id)}"${picked.has(g.id) ? ' checked' : ''}>
+              <span>${escAttr(g.name)}</span>
+            </label>`
+          )
+          .join('')
+      : '<p class="fa-groups-empty">Tidak ada grup yang cocok.</p>';
+
+    groupSummary.textContent = summaryText();
+  }
+
+  function summaryText(): string {
+    if (picked.size === 0) return 'Semua grup';
+    if (picked.size === 1) {
+      const one = allGroups.find((g) => g.id === [...picked][0]);
+      return one ? one.name : '1 grup dipilih';
+    }
+    return `${picked.size} grup dipilih`;
+  }
+
+  function setGroupsOpen(open: boolean): void {
+    groupPop.hidden = !open;
+    groupBtn.setAttribute('aria-expanded', String(open));
+    if (open) groupSearch.focus();
+  }
+
+  function onGroupBtn(): void {
+    setGroupsOpen(groupPop.hidden);
+  }
+
+  function onGroupPopChange(e: Event): void {
+    const box = e.target as HTMLInputElement | null;
+    if (!box || box.type !== 'checkbox') return;
+    if (box.checked) picked.add(box.value);
+    else picked.delete(box.value);
+    groupSummary.textContent = summaryText();
+    emitChange();
+  }
+
+  function onGroupPopClick(e: Event): void {
+    const bulk = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-bulk]')?.dataset.bulk;
+    if (!bulk) return;
+    picked.clear();
+    // "Pilih semua" hanya mencentang yang SEDANG terlihat: dengan kotak cari
+    // terisi, menandai seluruh database diam-diam adalah kejutan, bukan bantuan.
+    if (bulk === 'all') {
+      const q = groupSearch.value.trim().toLowerCase();
+      for (const g of allGroups) if (!q || g.name.toLowerCase().includes(q)) picked.add(g.id);
+    }
+    renderGroupList();
+    emitChange();
+  }
+
+  function onGroupSearch(): void {
+    renderGroupList();
+  }
+
+  /** Klik di luar menutup daftar — tanpa ini ia menutupi kontrol di bawahnya. */
+  function onDocClick(e: Event): void {
+    const t = e.target as Node | null;
+    if (!groupPop.hidden && t && !groupPop.contains(t) && !groupBtn.contains(t)) setGroupsOpen(false);
+  }
+
+  function onGroupKey(e: KeyboardEvent): void {
+    if (e.key === 'Escape' && !groupPop.hidden) {
+      setGroupsOpen(false);
+      groupBtn.focus();
+    }
   }
 
   function setActivePreset(id: PresetId | null) {
@@ -123,7 +239,7 @@ export function initFilterBar(container: HTMLElement, ctx: { database: string; r
     lastFilter = {
       dateFrom: dateFromEl.value,
       dateTo: dateToEl.value,
-      groupId: groupEl.value || undefined,
+      groupIds: picked.size ? [...picked] : undefined,
       zoneId: zoneEl.value || undefined,
     };
     ctx.rootEl.dispatchEvent(new CustomEvent('dashboard:filter-change', { bubbles: true, detail: lastFilter }));
@@ -193,9 +309,15 @@ export function initFilterBar(container: HTMLElement, ctx: { database: string; r
     applyScope((ev as CustomEvent<{ viewId: string }>).detail.viewId);
   }
 
-  const controls = [dateFromEl, dateToEl, groupEl, zoneEl];
+  const controls = [dateFromEl, dateToEl, zoneEl];
   controls.forEach((el) => el.addEventListener('change', onManualChange));
   presetsEl.addEventListener('click', onPresetClick);
+  groupBtn.addEventListener('click', onGroupBtn);
+  groupPop.addEventListener('change', onGroupPopChange);
+  groupPop.addEventListener('click', onGroupPopClick);
+  groupSearch.addEventListener('input', onGroupSearch);
+  groupPop.addEventListener('keydown', onGroupKey);
+  document.addEventListener('click', onDocClick);
   ctx.rootEl.addEventListener('dashboard:view-change', onViewChange);
   // view-host memasang view pertama tanpa memancarkan dashboard:view-change.
   applyScope(VIEWS[0].id);
@@ -209,6 +331,14 @@ export function initFilterBar(container: HTMLElement, ctx: { database: string; r
     clearTimeout(hintTimer);
     controls.forEach((el) => el.removeEventListener('change', onManualChange));
     presetsEl.removeEventListener('click', onPresetClick);
+    groupBtn.removeEventListener('click', onGroupBtn);
+    groupPop.removeEventListener('change', onGroupPopChange);
+    groupPop.removeEventListener('click', onGroupPopClick);
+    groupSearch.removeEventListener('input', onGroupSearch);
+    groupPop.removeEventListener('keydown', onGroupKey);
+    // Listener ini hidup di document, jauh di luar container — kalau tidak
+    // dilepas ia bertahan melewati setiap siklus blur/focus.
+    document.removeEventListener('click', onDocClick);
     ctx.rootEl.removeEventListener('dashboard:view-change', onViewChange);
   };
 }

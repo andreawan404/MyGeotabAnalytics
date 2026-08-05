@@ -744,3 +744,121 @@
     flex-wrap: nowrap;
   }
 }
+
+/* --- pemilih grup (multi) ---------------------------------------------------
+   Dropdown centang, bukan <select multiple>: memilih beberapa di select bawaan
+   butuh Ctrl+klik, tidak jelas bagi kebanyakan orang, dan praktis tidak bisa
+   dipakai di layar sentuh. */
+.fa-groups {
+  position: relative;
+}
+
+.fa-groups-label {
+  font-size: 0.8rem;
+  color: #4b5563;
+}
+
+.fa-groups-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font: inherit;
+  font-size: 0.85rem;
+  min-width: 12rem;
+  min-height: 44px; /* sejajar dengan kontrol filter lain, dan target sentuh */
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: var(--fa-surface);
+  color: var(--fa-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.fa-groups-btn:focus-visible {
+  outline: 2px solid var(--fa-accent);
+  outline-offset: 2px;
+}
+
+.fa-groups-caret {
+  flex: none;
+  color: var(--fa-muted);
+}
+
+/* Menutupi konten di bawahnya, bukan mendorongnya — membuka daftar grup tidak
+   boleh menggeser seluruh dashboard. */
+.fa-groups-pop {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  z-index: 30;
+  width: min(20rem, 90vw);
+  padding: 0.5rem;
+  background: var(--fa-surface);
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.14);
+}
+
+.fa-groups-search {
+  font: inherit;
+  font-size: 0.8125rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--fa-border);
+  border-radius: 6px;
+  background: var(--fa-surface);
+  color: var(--fa-text);
+}
+
+.fa-groups-bulk {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.4rem 0.15rem;
+}
+
+.fa-groups-bulk button {
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fa-accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* Dibatasi dan digulirkan: database dengan puluhan grup tidak boleh membuat
+   daftarnya memanjang keluar layar. */
+.fa-groups-list {
+  max-height: 15rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.fa-groups-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.15rem;
+  font-size: 0.85rem;
+  color: var(--fa-text);
+  cursor: pointer;
+}
+
+.fa-groups-item:hover {
+  background: var(--fa-bg);
+}
+
+.fa-groups-item input {
+  flex: none;
+}
+
+.fa-groups-empty {
+  margin: 0;
+  padding: 0.5rem 0.15rem;
+  font-size: 0.78rem;
+  color: var(--fa-muted);
+}

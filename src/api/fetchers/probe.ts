@@ -1,5 +1,6 @@
 import { getCached, setCached, buildCacheKey } from '../../utils/cache';
 import { fetchStatusDataMulti } from './status-data';
+import { groupKey } from './search';
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 const LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000; // 2 days: long enough that a parked vehicle still reports
@@ -32,10 +33,10 @@ export async function probeDiagnostics(params: {
   database: string;
   diagnosticIds: string[];
   toIso: string;
-  groupId?: string;
+  groupIds?: string[];
 }): Promise<Record<string, boolean>> {
   const ids = [...params.diagnosticIds].sort(); // sorted so caller ordering doesn't fragment the cache
-  const key = buildCacheKey(params.database, 'diag-probe', ids.join(','), params.groupId ?? '');
+  const key = buildCacheKey(params.database, 'diag-probe', ids.join(','), groupKey(params.groupIds));
   const cached = await getCached<Record<string, boolean>>(key);
   if (cached) return cached;
 
@@ -45,7 +46,7 @@ export async function probeDiagnostics(params: {
     diagnosticIds: ids,
     fromDate: fromIso,
     toDate: params.toIso,
-    groupId: params.groupId,
+    groupIds: params.groupIds,
     resultsLimit: 1, // presence only — never pull rows we're going to throw away
   });
 

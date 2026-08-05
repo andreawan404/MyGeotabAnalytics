@@ -1,7 +1,7 @@
 import { callApi } from '../geotabClient';
 import { getCached, setCached, buildCacheKey } from '../../utils/cache';
 import type { FuelTransactionDTO } from './types';
-import { groupDeviceSearch, restrictToGroup } from './search';
+import { groupDeviceSearch, restrictToGroup, groupKey } from './search';
 
 const TTL_MS = 30 * 60 * 1000;
 const RESULTS_LIMIT = 50000;
@@ -28,9 +28,9 @@ export async function fetchFuelTransactions(params: {
   database: string;
   fromDate: string;
   toDate: string;
-  groupId?: string;
+  groupIds?: string[];
 }): Promise<FuelTransactionDTO[]> {
-  const key = buildCacheKey(params.database, 'fuel-transaction', params.fromDate, params.toDate, params.groupId ?? '');
+  const key = buildCacheKey(params.database, 'fuel-transaction', params.fromDate, params.toDate, groupKey(params.groupIds));
   const cached = await getCached<FuelTransactionDTO[]>(key);
   if (cached) return cached;
 
@@ -39,7 +39,7 @@ export async function fetchFuelTransactions(params: {
     search: {
       fromDate: params.fromDate,
       toDate: params.toDate,
-      ...groupDeviceSearch(params.groupId),
+      ...groupDeviceSearch(params.groupIds),
     },
     resultsLimit: RESULTS_LIMIT,
   }).catch((err) => {
@@ -53,7 +53,7 @@ export async function fetchFuelTransactions(params: {
   // Keanggotaan grup ditegakkan di klien: search-nya diabaikan server (search.ts).
 
 
-  const scoped = await restrictToGroup(raw, params.database, params.groupId);
+  const scoped = await restrictToGroup(raw, params.database, params.groupIds);
 
 
   const dtos = scoped.map(toDTO);

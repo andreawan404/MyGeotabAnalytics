@@ -148,6 +148,8 @@ export interface DriverLite {
 export interface FilterChangeDetail {
   dateFrom: string;
   dateTo: string;
-  groupId?: string;
+  /** Grup terpilih. Kosong/absen = seluruh armada. Beberapa grup berarti
+   *  GABUNGAN unitnya, bukan irisan. */
+  groupIds?: string[];
   zoneId?: string;
 }

@@ -167,7 +167,7 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
       const toMs = Date.parse(toIso);
       const faultFromIso = new Date(toMs - FAULT_WINDOW_DAYS * DAY_MS).toISOString();
       const latestFromIso = new Date(toMs - LATEST_READING_DAYS * DAY_MS).toISOString();
-      const groupId = filter.groupId;
+      const groupIds = filter.groupIds;
 
       // Which of these does this database actually report? Availability varies
       // per OEM, so we ask the SHARED probe rather than firing our own.
@@ -176,7 +176,7 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
         database: ctx.database,
         diagnosticIds: [odometerAdjustment, odometer, engineHours],
         toIso,
-        groupId,
+        groupIds,
       });
       // Adjustment first: it is the odometer value corrected for device swaps,
       // which is the one a service interval should be counted against.
@@ -195,12 +195,12 @@ export function initPredictiveView(container: HTMLElement, ctx: ViewCtx): () => 
               diagnosticIds: wanted,
               fromDate: latestFromIso,
               toDate: toIso,
-              groupId,
+              groupIds,
             })
           : Promise.resolve({} as Record<string, StatusDataDTO[]>),
-        fetchFaultData({ database: ctx.database, fromDate: faultFromIso, toDate: toIso, groupId }),
-        fetchDvirDefects({ database: ctx.database, fromDate: faultFromIso, toDate: toIso, groupId }),
-        fetchDevices({ database: ctx.database, groupId, fromDate: faultFromIso, toDate: toIso }),
+        fetchFaultData({ database: ctx.database, fromDate: faultFromIso, toDate: toIso, groupIds }),
+        fetchDvirDefects({ database: ctx.database, fromDate: faultFromIso, toDate: toIso, groupIds }),
+        fetchDevices({ database: ctx.database, groupIds, fromDate: faultFromIso, toDate: toIso }),
       ]);
 
       if (disposed) return;

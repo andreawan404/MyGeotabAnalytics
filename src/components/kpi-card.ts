@@ -187,13 +187,13 @@ export function initKpiCards(container: HTMLElement, ctx: { database: string; ro
   // Kept so changing the working-hours basis re-renders without re-fetching.
   let latest: { trips: TripDTO[]; exceptions: ExceptionEventDTO[]; deviceCount: number; periodSec: number } | null = null;
 
-  async function load(dateFrom: string, dateTo: string, groupId?: string) {
+  async function load(dateFrom: string, dateTo: string, groupIds?: string[]) {
     try {
       const { fromIso, toIso, periodSec } = toUtcRange(dateFrom, dateTo);
       const [trips, exceptions, devices] = await Promise.all([
-        fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
-        fetchExceptionEvents({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupId }),
-        fetchDevices({ database: ctx.database, groupId, fromDate: fromIso, toDate: toIso }),
+        fetchTrips({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupIds }),
+        fetchExceptionEvents({ database: ctx.database, fromDate: fromIso, toDate: toIso, groupIds }),
+        fetchDevices({ database: ctx.database, groupIds, fromDate: fromIso, toDate: toIso }),
       ]);
       latest = { trips, exceptions, deviceCount: devices.length, periodSec };
       render();
@@ -305,7 +305,7 @@ export function initKpiCards(container: HTMLElement, ctx: { database: string; ro
 
   function onFilterChange(e: Event) {
     const detail = (e as CustomEvent<FilterChangeDetail>).detail;
-    load(detail.dateFrom, detail.dateTo, detail.groupId);
+    load(detail.dateFrom, detail.dateTo, detail.groupIds);
   }
 
 
